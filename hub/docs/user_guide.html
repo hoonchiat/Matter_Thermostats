@@ -1,0 +1,308 @@
+
+<style>
+:root{
+  --bg:#fbfcfd; --panel:#ffffff; --panel2:#f4f7f9; --ink:#1b2430; --muted:#5b6b7a;
+  --faint:#8595a3; --line:#e3e9ee; --line2:#eef2f5; --accent:#0f766e; --accent-ink:#0b5750;
+  --code-bg:#0f1720; --code-ink:#d6e2ea; --code-tint:#e9f1ef; --code-tint-ink:#0b5750;
+  --amber:#b45309; --shadow:0 1px 2px rgba(20,40,60,.04),0 8px 24px -16px rgba(20,40,60,.18);
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --bg:#0e141b; --panel:#151d27; --panel2:#111922; --ink:#dbe4ec; --muted:#8ea0b0;
+    --faint:#6b7d8c; --line:#22303c; --line2:#1a2530; --accent:#2dd4bf; --accent-ink:#5ee9d8;
+    --code-bg:#0a1017; --code-ink:#c8d6e0; --code-tint:#132621; --code-tint-ink:#5ee9d8;
+    --amber:#f0b45e; --shadow:0 1px 2px rgba(0,0,0,.3),0 10px 30px -18px rgba(0,0,0,.6);
+  }
+}
+:root[data-theme="light"]{
+  --bg:#fbfcfd; --panel:#ffffff; --panel2:#f4f7f9; --ink:#1b2430; --muted:#5b6b7a;
+  --faint:#8595a3; --line:#e3e9ee; --line2:#eef2f5; --accent:#0f766e; --accent-ink:#0b5750;
+  --code-bg:#0f1720; --code-ink:#d6e2ea; --code-tint:#e9f1ef; --code-tint-ink:#0b5750;
+  --amber:#b45309; --shadow:0 1px 2px rgba(20,40,60,.04),0 8px 24px -16px rgba(20,40,60,.18);
+}
+:root[data-theme="dark"]{
+  --bg:#0e141b; --panel:#151d27; --panel2:#111922; --ink:#dbe4ec; --muted:#8ea0b0;
+  --faint:#6b7d8c; --line:#22303c; --line2:#1a2530; --accent:#2dd4bf; --accent-ink:#5ee9d8;
+  --code-bg:#0a1017; --code-ink:#c8d6e0; --code-tint:#132621; --code-tint-ink:#5ee9d8;
+  --amber:#f0b45e; --shadow:0 1px 2px rgba(0,0,0,.3),0 10px 30px -18px rgba(0,0,0,.6);
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  font-size:16px;line-height:1.68;-webkit-font-smoothing:antialiased;}
+.mono,code,pre,th.k{font-family:ui-monospace,"SF Mono","Cascadia Code","JetBrains Mono","Consolas",monospace;}
+.wrap{display:grid;grid-template-columns:248px minmax(0,1fr);gap:0;max-width:1180px;margin:0 auto;}
+/* sidebar */
+.toc{position:sticky;top:0;align-self:start;height:100vh;overflow-y:auto;padding:28px 16px 40px 24px;
+  border-right:1px solid var(--line);}
+.toc .brand{font-size:12.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);font-weight:700;margin-bottom:14px;}
+.toc nav{display:flex;flex-direction:column;gap:1px;}
+.toc a{color:var(--muted);text-decoration:none;padding:5px 10px;border-radius:7px;font-size:13.5px;
+  border-left:2px solid transparent;line-height:1.35;}
+.toc a.l3{padding-left:22px;font-size:12.8px;color:var(--faint);}
+.toc a:hover{color:var(--ink);background:var(--panel2);}
+.toc a.active{color:var(--accent-ink);background:var(--code-tint);border-left-color:var(--accent);font-weight:600;}
+/* content */
+.content{padding:44px clamp(20px,4vw,60px) 96px;min-width:0;}
+.content>*{max-width:74ch;}
+.content .tablewrap,.content .codewrap{max-width:82ch;}
+h1{font-size:clamp(28px,4.4vw,40px);line-height:1.1;letter-spacing:-.02em;margin:0 0 6px;text-wrap:balance;font-weight:750;}
+h1+p{font-size:17.5px;color:var(--muted);margin-top:0;}
+h2{font-size:23px;letter-spacing:-.01em;margin:64px 0 10px;padding-top:26px;border-top:1px solid var(--line);text-wrap:balance;font-weight:720;
+  scroll-margin-top:20px;}
+h2:first-of-type{border-top:0;}
+h3{font-size:16.5px;margin:34px 0 8px;color:var(--ink);font-weight:680;scroll-margin-top:20px;
+  text-transform:none;}
+h3::before{content:"";display:inline-block;width:16px;height:2px;background:var(--accent);vertical-align:middle;margin-right:10px;border-radius:2px;}
+p{margin:12px 0;}
+a{color:var(--accent-ink);text-underline-offset:2px;text-decoration-color:color-mix(in srgb,var(--accent) 45%,transparent);}
+strong{font-weight:680;color:var(--ink);}
+ul{margin:12px 0;padding-left:2px;list-style:none;}
+li{position:relative;padding-left:22px;margin:7px 0;}
+li::before{content:"";position:absolute;left:4px;top:.68em;width:6px;height:6px;border-radius:50%;background:var(--accent);opacity:.55;}
+/* inline code */
+code{background:var(--code-tint);color:var(--code-tint-ink);padding:.09em .38em;border-radius:5px;font-size:.86em;
+  border:1px solid color-mix(in srgb,var(--accent) 14%,transparent);}
+/* code blocks */
+.codewrap{overflow-x:auto;margin:14px 0;border-radius:12px;box-shadow:var(--shadow);}
+pre.code{margin:0;background:var(--code-bg);color:var(--code-ink);padding:16px 18px;border-radius:12px;
+  font-size:13px;line-height:1.6;border:1px solid rgba(255,255,255,.05);}
+pre.code code{background:none;border:0;padding:0;color:inherit;font-size:inherit;}
+/* tables */
+.tablewrap{overflow-x:auto;margin:16px 0;border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);}
+table{border-collapse:collapse;width:100%;font-size:14px;background:var(--panel);}
+th{text-align:left;font-weight:640;color:var(--muted);background:var(--panel2);padding:10px 14px;
+  border-bottom:1px solid var(--line);font-size:12px;letter-spacing:.03em;text-transform:uppercase;white-space:nowrap;}
+td{padding:9px 14px;border-bottom:1px solid var(--line2);vertical-align:top;}
+tr:last-child td{border-bottom:0;}
+tbody tr:hover{background:var(--panel2);}
+td code{white-space:nowrap;}
+/* blockquote */
+blockquote{margin:16px 0;padding:12px 16px;border-left:3px solid var(--accent);background:var(--panel2);
+  border-radius:0 10px 10px 0;color:var(--muted);font-size:14.5px;}
+blockquote code{background:color-mix(in srgb,var(--accent) 12%,var(--panel));}
+.content>p:last-of-type{color:var(--faint);font-size:13.5px;border-top:1px solid var(--line);padding-top:20px;margin-top:40px;font-style:italic;}
+::selection{background:color-mix(in srgb,var(--accent) 28%,transparent);}
+a:focus-visible,.toc a:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:5px;}
+@media (max-width:900px){
+  .wrap{grid-template-columns:1fr;}
+  .toc{position:static;height:auto;border-right:0;border-bottom:1px solid var(--line);
+    padding:20px 20px 16px;}
+  .toc nav{flex-flow:row wrap;gap:2px 4px;}
+  .toc a{border-left:0;padding:4px 9px;}
+  .toc a.active{border-left:0;}
+  .toc a.l3{display:none;}
+  .content{padding:28px 20px 72px;}
+  .content>*,.content .tablewrap,.content .codewrap{max-width:100%;}
+}
+@media (prefers-reduced-motion:no-preference){html{scroll-behavior:smooth;}}
+</style>
+<div class="wrap"><aside class="toc"><div class="brand">Matter Hub v1.8</div><nav><a class="l2" href="#1-feature-list">1. Feature list</a>
+<a class="l2" href="#2-connecting">2. Connecting</a>
+<a class="l2" href="#3-console-reference-com12">3. Console reference (COM12)</a>
+<a class="l3" href="#31-commissioning-devices">3.1 Commissioning &amp; devices</a>
+<a class="l3" href="#32-inspector-readcontrol-a-device">3.2 Inspector (read/control a device)</a>
+<a class="l3" href="#33-bindings-device-device">3.3 Bindings (device → device)</a>
+<a class="l3" href="#34-value-logic-automation">3.4 Value logic (automation)</a>
+<a class="l3" href="#35-scheduling-calendar">3.5 Scheduling &amp; calendar</a>
+<a class="l3" href="#36-status-config-diagnostics">3.6 Status, config, diagnostics</a>
+<a class="l2" href="#4-json-protocol-reference-com7">4. JSON protocol reference (COM7)</a>
+<a class="l3" href="#41-queries-structured-results">4.1 Queries (structured results)</a>
+<a class="l3" href="#42-actions-structured-ack-error">4.2 Actions (structured ack / error)</a>
+<a class="l3" href="#43-rebooting-actions">4.3 Rebooting actions</a>
+<a class="l3" href="#44-live-device-io-async">4.4 Live device I/O (async)</a>
+<a class="l2" href="#5-common-workflows">5. Common workflows</a>
+<a class="l2" href="#6-specifications-limits">6. Specifications &amp; limits</a>
+<a class="l2" href="#7-notes-caveats">7. Notes &amp; caveats</a></nav></aside><main class="content"><h1 id="matter-hub-v10-user-guide-v18">Matter Hub V1.0 — User Guide (v1.8)</h1>
+<p>The hub is an ESP32-C6 Matter <strong>controller</strong> + Thread <strong>Border Router</strong>. It commissions Matter-over-Thread devices and gives you two independent ways to operate them:</p>
+<div class="tablewrap"><table><thead><tr><th>Interface</th><th>Port</th><th>Baud</th><th>Format</th><th>Best for</th></tr></thead><tbody><tr><td><strong>Console</strong></td><td>UART0 (<code>COM12</code>)</td><td>115200</td><td>free-text lines + human output; also carries <code>ESP_LOG</code></td><td>interactive use, a terminal</td></tr><tr><td><strong>JSON protocol</strong></td><td>native USB-Serial-JTAG (<code>COM7</code>)</td><td>115200</td><td>NDJSON (one compact JSON object per line)</td><td>scripts, GUIs, a web dashboard</td></tr></tbody></table></div>
+<p>Both run at once and are serialised internally (a command mutex), so a script on COM7 and a person on COM12 never corrupt shared state. The console also emits log output; the JSON port is <strong>clean</strong> (no logs) except for a one-time ROM/bootloader banner at power-up.</p>
+<blockquote>Port note: <code>COM7</code>/<code>COM12</code> are the numbers on this build's PC. "COM7" is the connector wired directly to the C6 (labelled <strong>USB</strong> on the DevKit); "COM12" is the CP2102 USB-UART bridge (labelled <strong>UART</strong>). Flashing uses COM12.</blockquote>
+<h2 id="1-feature-list">1. Feature list</h2>
+<ul><li><strong>Commissioning</strong> — pair one device (<code>pair</code>) or several in one go (<code>pairlist</code>); BLE-isolated, reboot-based (FOUNDATION §4/§5). <code>blescan</code> finds devices in pairing mode. <code>remove</code> decommissions.</li><li><strong>Inspector</strong> — walk any device: <code>devices</code>, <code>tree</code>, <code>ep</code>, <code>cluster</code>, <code>read</code>, <code>write</code>, <code>invoke</code>, <code>scan</code>; <code>on</code>/<code>off</code>/<code>toggle</code> shortcuts.</li><li><strong>Device-to-device binding</strong> — <code>bind</code> a button to a plug: hub-mediated relay for event-only switches (e.g. IKEA BILRESA) or native Matter binding for capable sources.</li><li><strong>Value logic (automation)</strong> — rules that watch sensor values (temp/humidity/ co2/pm25) with hysteresis, boolean <strong>AND/OR/XOR/NOT</strong>, one level of <strong>( )</strong> grouping, and drive OnOff targets; <strong>track</strong> (auto-inverse) or <strong>oneshot</strong>.</li><li><strong>Time scheduling</strong> — up to <strong>4 schedulers</strong>, each a weekly (Mon–Sun) + holiday day-schedule; a shared <strong>calendar</strong> of public holidays (DD/MM, <code>**</code> wildcards); logic can use <code>schedule &lt;n&gt;</code> and <code>calendar</code> as conditions.</li><li><strong>Live status / sensors</strong> — one device or all, over either interface.</li><li><strong>Config backup / restore</strong> — the whole config (devices + bindings + logic + schedule + calendar) as JSON; restore re-pairs devices by identity; <code>restore wipe</code> factory-resets first. Enables hub-to-hub cloning.</li><li><strong>Labels, timezone, persistent debug, heap diagnostics.</strong></li></ul>
+<h2 id="2-connecting">2. Connecting</h2>
+<ul><li><strong>Console:</strong> open <code>COM12</code> at 115200, 8N1. No DTR/RTS toggling (that reboots the hub). Type a command, press Enter.</li><li><strong>JSON:</strong> open <code>COM7</code> at 115200. Send one JSON object per line ending in <code>\n</code>; read one JSON object per line back. Each request may carry an <code>"id"</code> which is echoed in the response so you can correlate.</li></ul>
+<p>Minimal Python client for COM7:</p>
+<div class="codewrap"><pre class="code lang-python"><code>import serial, json
+s = serial.Serial('COM7', 115200, timeout=3)
+def call(obj):
+    s.write((json.dumps(obj, separators=(',', ':')) + '\n').encode())
+    return json.loads(s.readline())
+print(call({"id": 1, "cmd": "status"}))</code></pre></div>
+<h2 id="3-console-reference-com12">3. Console reference (COM12)</h2>
+<p>Every command is one line. <code>&lt;n&gt;</code> is a 1-based device number (see <code>devices</code>); <code>#n</code> is the same in logic/bind. <code>[..]</code> = optional.</p>
+<h3 id="31-commissioning-devices">3.1 Commissioning &amp; devices</h3>
+<div class="tablewrap"><table><thead><tr><th>Command</th><th>What it does</th></tr></thead><tbody><tr><td><code>payload &lt;MT:...|code&gt;</code></td><td>set the onboarding code for the NEXT device</td></tr><tr><td><code>pin &lt;PIN&gt; &lt;disc&gt;</code></td><td>set manual credentials (discriminator 0–4095)</td></tr><tr><td><code>blescan [secs]</code></td><td>scan BLE for devices in pairing mode (discriminator + VID/PID)</td></tr><tr><td><code>pair</code></td><td>add ONE device using the set payload/pin (reboots into commissioning)</td></tr><tr><td><code>pairlist &lt;c1&gt; &lt;c2&gt; ...</code></td><td>batch-pair several devices, then print a paired/failed report</td></tr><tr><td><code>remove &lt;n&gt;</code></td><td>decommission device slot <code>&lt;n&gt;</code> (unpair + reboot)</td></tr><tr><td><code>name &lt;n&gt; [label]</code></td><td>set a device label (empty clears); shown as "label (name)" everywhere</td></tr><tr><td><code>reset</code></td><td>factory reset (erase NVS + Matter fabric) + restart</td></tr></tbody></table></div>
+<p>Examples:</p>
+<div class="codewrap"><pre class="code lang-"><code>payload MT:Y.K9042C00KA0648G00
+pair
+pairlist 22089934501 25748432181 02259336520
+name 4 Kitchen Plug
+remove 3</code></pre></div>
+<h3 id="32-inspector-readcontrol-a-device">3.2 Inspector (read/control a device)</h3>
+<div class="tablewrap"><table><thead><tr><th>Command</th><th>What it does</th></tr></thead><tbody><tr><td><code>devices</code> (or <code>list</code>)</td><td>list paired devices: slot, payload, name/label, VID/PID, online state</td></tr><tr><td><code>device &lt;n&gt;</code></td><td>one device's detail</td></tr><tr><td><code>tree &lt;n&gt;</code></td><td>full endpoint → cluster tree (from the cached enumeration)</td></tr><tr><td><code>ep &lt;n&gt; &lt;ep&gt;</code></td><td>one endpoint's clusters</td></tr><tr><td><code>cluster &lt;n&gt; &lt;ep&gt; &lt;cl&gt;</code></td><td>live-read a cluster's attributes/commands</td></tr><tr><td><code>read &lt;n&gt; &lt;ep&gt; &lt;cl&gt; &lt;attr&gt;</code></td><td>live-read one attribute</td></tr><tr><td><code>write &lt;n&gt; &lt;ep&gt; &lt;cl&gt; &lt;attr&gt; &lt;value&gt;</code></td><td>write an attribute (esp-matter JSON value)</td></tr><tr><td><code>invoke &lt;n&gt; &lt;ep&gt; &lt;cl&gt; &lt;cmd&gt; [args]</code></td><td>invoke a command (args default <code>{}</code>)</td></tr><tr><td><code>scan &lt;n&gt;</code></td><td>re-enumerate a device</td></tr><tr><td><code>on|off|toggle &lt;n&gt; [ep]</code></td><td>OnOff shortcut (endpoint auto-found)</td></tr></tbody></table></div>
+<p>Examples:</p>
+<div class="codewrap"><pre class="code lang-"><code>devices
+tree 4
+read 4 1 0x0006 0x0000
+on 4
+invoke 4 1 0x0006 0x02
+write 1 0 0x0028 0x0005 {"0:STR":"MatterHub"}</code></pre></div>
+<h3 id="33-bindings-device-device">3.3 Bindings (device → device)</h3>
+<div class="tablewrap"><table><thead><tr><th>Command</th><th>What it does</th></tr></thead><tbody><tr><td><code>bindable &lt;n&gt;</code></td><td>show how <code>&lt;n&gt;</code> can bind (source/target roles per endpoint)</td></tr><tr><td><code>bind &lt;s&gt; &lt;sep&gt; &lt;d&gt; [dep] [on|off|toggle]</code></td><td>bind source endpoint → dest OnOff (auto native/hub; default <code>toggle</code>)</td></tr><tr><td><code>bindings [n]</code></td><td>list hub-mediated rules (and <code>&lt;n&gt;</code>'s native table if given)</td></tr><tr><td><code>unbind &lt;idx&gt;</code></td><td>remove hub rule <code>&lt;idx&gt;</code></td></tr><tr><td><code>unbind &lt;s&gt; &lt;sep&gt; &lt;d&gt;</code></td><td>remove a native binding</td></tr></tbody></table></div>
+<p>Examples:</p>
+<div class="codewrap"><pre class="code lang-"><code>bindable 3
+bind 3 1 4 toggle        # BILRESA button ep1 -&gt; toggle plug #4
+bind 3 2 5 on            # button ep2 -&gt; turn plug #5 on
+bindings
+unbind 0</code></pre></div>
+<h3 id="34-value-logic-automation">3.4 Value logic (automation)</h3>
+<div class="codewrap"><pre class="code lang-"><code>logic add &lt;term&gt; [and|or|xor &lt;term&gt;]... &lt;on|off|toggle&gt; #d [#d2..] [oneshot]
+    &lt;term&gt; = &lt;cond&gt;  |  ( &lt;cond&gt; [and|or|xor &lt;cond&gt;]... )     (one group level)
+    &lt;cond&gt; = [not] &lt;sensor&gt; [avg|min|max] #s.. &lt;op&gt; &lt;val&gt; [hyst &lt;v&gt;]
+           | [not] schedule &lt;n&gt;        (scheduler 1..4 active now)
+           | [not] calendar            (today is a public holiday)
+    sensors: temp humidity co2 pm25    op: &gt; &gt;= &lt; &lt;=    (default mode: track)</code></pre></div>
+<div class="tablewrap"><table><thead><tr><th>Command</th><th>What it does</th></tr></thead><tbody><tr><td><code>logic</code> (or <code>logic list</code>)</td><td>list rules + live sensor values</td></tr><tr><td><code>logic add ...</code></td><td>add a rule (see grammar)</td></tr><tr><td><code>logic rm &lt;idx&gt;</code></td><td>remove rule <code>&lt;idx&gt;</code></td></tr><tr><td><code>logic help</code></td><td>print the grammar</td></tr></tbody></table></div>
+<p>Examples:</p>
+<div class="codewrap"><pre class="code lang-"><code>logic add temp #1 &gt; 28 on #4
+logic add temp #1 &gt; 28 hyst 1.0 off #4 oneshot
+logic add co2 avg #1 #2 &gt; 1250 on #5 #6
+logic add temp #1 &gt; 28 and co2 #1 &gt; 1000 on #4
+logic add temp #1 &gt; 28 and schedule 1 on #5
+logic add calendar and ( temp #2 &gt; 25 or co2 #2 &gt; 10000 ) on #4
+logic add not schedule 2 and humidity #1 &lt; 40 on #4
+logic rm 0</code></pre></div>
+<ul><li><strong>track</strong> (default): the target follows the condition (on when true, inverse when false), re-asserted every 120 s. <strong>oneshot</strong>: fires once on the rising edge.</li><li>Hysteresis stops chatter: <code>temp #1 &gt; 28</code> (default hyst 0.5) turns on at 28.0 and off at 27.5.</li><li>A rule only acts once <strong>all</strong> its conditions have data; <code>schedule</code>/<code>calendar</code> read <strong>false</strong> until the clock is set.</li></ul>
+<h3 id="35-scheduling-calendar">3.5 Scheduling &amp; calendar</h3>
+<div class="tablewrap"><table><thead><tr><th>Command</th><th>What it does</th></tr></thead><tbody><tr><td><code>sched</code></td><td>list all 4 schedulers: cal-control flag, each day's events, live on/off</td></tr><tr><td><code>sched &lt;n&gt;</code></td><td>list scheduler <code>&lt;n&gt;</code> (1..4)</td></tr><tr><td><code>sched &lt;n&gt; &lt;day&gt; add HH:MM HH:MM</code></td><td>add an event; <code>&lt;day&gt;</code> = <code>mon</code>..<code>sun</code> or <code>holiday</code>; 2nd time = last ON minute</td></tr><tr><td><code>sched &lt;n&gt; &lt;day&gt; rm &lt;idx&gt;</code></td><td>remove an event</td></tr><tr><td><code>sched &lt;n&gt; cal on|off</code></td><td>enable/disable calendar (holiday) control for scheduler <code>&lt;n&gt;</code></td></tr><tr><td><code>calendar</code></td><td>list public holidays + whether today matches</td></tr><tr><td><code>calendar add DD/MM</code></td><td>add a holiday date (<code>**</code> = any day or any month)</td></tr><tr><td><code>calendar rm &lt;idx&gt;</code></td><td>remove a holiday</td></tr><tr><td><code>tz &lt;±HH:MM&gt;</code></td><td>set/show the timezone offset (local = UTC + tz)</td></tr><tr><td><code>settime YYYY-MM-DD HH:MM:SS [+HH:MM]</code></td><td>set the clock (local time; add an offset to also set tz)</td></tr></tbody></table></div>
+<p>Event semantics: <code>08:00 08:59</code> means <strong>on at 08:00, off at 09:00</strong> (the second field is the last ON minute). Events on the same day must not overlap; max 4/day.</p>
+<p>Examples:</p>
+<div class="codewrap"><pre class="code lang-"><code>tz +08:00
+settime 2026-08-05 10:30:00 +08:00
+sched 1 mon add 08:00 17:59         # weekdays 08:00 -&gt; off 18:00
+sched 1 tue add 08:00 17:59
+sched 1 sat add 09:00 12:59
+sched 1 holiday add 10:00 11:59     # different hours on public holidays
+sched 1 cal on                      # honour the holiday schedule on holidays
+calendar add 25/12                  # Christmas
+calendar add 01/01                  # New Year
+calendar add **/07                  # all of July (e.g. school break)
+calendar add 01/**                  # the 1st of every month
+sched</code></pre></div>
+<h3 id="36-status-config-diagnostics">3.6 Status, config, diagnostics</h3>
+<div class="tablewrap"><table><thead><tr><th>Command</th><th>What it does</th></tr></thead><tbody><tr><td><code>status</code></td><td>mode, device count, radio, debug, next-pair creds</td></tr><tr><td><code>dash</code></td><td>one-shot live table of every device (values + reachability + last press)</td></tr><tr><td><code>heap</code></td><td>free / min-ever / largest-block + task stack headroom</td></tr><tr><td><code>debug on|off</code></td><td>verbose logging (persists across reboots)</td></tr><tr><td><code>backup</code></td><td>print the whole config as one compact JSON line</td></tr><tr><td><code>restore</code></td><td>paste a backup JSON (end with a line <code>.</code>), re-pairs devices as needed</td></tr><tr><td><code>restore wipe</code></td><td>factory-erase first, then restore exactly from the JSON</td></tr></tbody></table></div>
+<h2 id="4-json-protocol-reference-com7">4. JSON protocol reference (COM7)</h2>
+<p><strong>Framing:</strong> one compact JSON object per line, <code>\n</code>-terminated, both directions.</p>
+<ul><li>Request: <code>{"id":&lt;int&gt;,"cmd":"&lt;name&gt;", ...args}</code> — <code>id</code> optional, echoed back.</li><li>Success: <code>{"id":&lt;int&gt;,"ok":true,"result":{...}}</code> (queries) or <code>{"ok":true}</code> / <code>{"ok":true,"result":{"rebooting":true}}</code> (actions).</li><li>Error: <code>{"id":&lt;int&gt;,"ok":false,"error":"&lt;message&gt;"}</code> — malformed JSON, unknown command, or a validation failure. Never crashes; never a partial NVS change.</li></ul>
+<p>Device references: <code>"dev"</code>/<code>"src"</code>/<code>"dst"</code> are 1-based device numbers; <code>status</code>'s <code>"dev"</code> also accepts a payload string.</p>
+<h3 id="41-queries-structured-results">4.1 Queries (structured results)</h3>
+<div class="tablewrap"><table><thead><tr><th><code>cmd</code></th><th>Args</th><th>Result</th></tr></thead><tbody><tr><td><code>ping</code></td><td>—</td><td><code>{"pong":true}</code></td></tr><tr><td><code>status</code> / <code>devices</code></td><td><code>{}</code> = all, or <code>{"dev":&lt;n|payload&gt;}</code></td><td><code>{"devices":[...]}</code> (identity, sensors, online/age, rssi/lqi, battery)</td></tr><tr><td><code>heap</code></td><td>—</td><td><code>{"free","min_ever","largest"}</code></td></tr><tr><td><code>schedule</code> / <code>sched_list</code> / <code>calendar_list</code></td><td>—</td><td><code>{"tz","schedulers":[...],"calendar":[...]}</code></td></tr><tr><td><code>logic_list</code></td><td>—</td><td><code>[{"idx","text","state"}]</code></td></tr><tr><td><code>bindings</code></td><td>—</td><td><code>[{"idx","src","src_ep","dst","dst_ep","action"}]</code></td></tr><tr><td><code>backup</code></td><td>—</td><td>the full config object (devices/bindings/logic/schedule)</td></tr></tbody></table></div>
+<p>Examples:</p>
+<div class="codewrap"><pre class="code lang-json"><code>{"id":1,"cmd":"ping"}
+  -&gt; {"id":1,"ok":true,"result":{"pong":true}}
+
+{"id":2,"cmd":"status","dev":1}
+  -&gt; {"id":2,"ok":true,"result":{"devices":[{"slot":1,"node_id":"0x0000000200000001",
+     "name":"ALPSTUGA air quality monitor","label":"","payload":"22089934501",
+     "vid":4476,"pid":12289,"enumerated":true,"age_s":3,"online":true,"rssi":-37,
+     "lqi":3,"sensors":{"temp":24.7,"humidity":53.0,"co2":892,"pm25":1}}]}}
+
+{"id":3,"cmd":"status"}          # all devices
+{"id":4,"cmd":"heap"}            # -&gt; {"free":41064,"min_ever":5520,"largest":14592}
+{"id":5,"cmd":"backup"}          # -&gt; the whole config as result
+{"id":6,"cmd":"logic_list"}
+{"id":7,"cmd":"bindings"}
+{"id":8,"cmd":"schedule"}</code></pre></div>
+<h3 id="42-actions-structured-ack-error">4.2 Actions (structured ack / error)</h3>
+<div class="tablewrap"><table><thead><tr><th><code>cmd</code></th><th>Args</th><th>Notes</th></tr></thead><tbody><tr><td><code>logic_add</code></td><td><code>{"expr":"&lt;console logic syntax&gt;"}</code></td><td>same grammar as <code>logic add</code></td></tr><tr><td><code>logic_rm</code></td><td><code>{"idx":&lt;n&gt;}</code></td><td></td></tr><tr><td><code>bind</code></td><td><code>{"src","src_ep","dst","dst_ep"?,"action"?}</code></td><td>action <code>on|off|toggle</code> (default toggle)</td></tr><tr><td><code>unbind</code></td><td><code>{"idx":&lt;n&gt;}</code></td><td>hub rule</td></tr><tr><td><code>sched_add</code></td><td><code>{"n","day","start","end"}</code></td><td><code>day</code>=<code>mon</code>..<code>sun</code>/<code>holiday</code>; times <code>"HH:MM"</code></td></tr><tr><td><code>sched_rm</code></td><td><code>{"n","day","idx"}</code></td><td></td></tr><tr><td><code>sched_cal</code></td><td><code>{"n","on":&lt;bool&gt;}</code></td><td>calendar control for scheduler <code>n</code></td></tr><tr><td><code>calendar_add</code></td><td><code>{"date":"DD/MM"}</code></td><td><code>**</code> wildcard allowed</td></tr><tr><td><code>calendar_rm</code></td><td><code>{"idx":&lt;n&gt;}</code></td><td></td></tr><tr><td><code>tz</code></td><td><code>{"offset":"+08:00"}</code> or <code>{"offset":&lt;minutes&gt;}</code></td><td></td></tr><tr><td><code>settime</code></td><td><code>{"iso":"2026-08-05 10:30:00 +08:00"}</code></td><td></td></tr><tr><td><code>name</code></td><td><code>{"dev","label"}</code></td><td>empty label clears</td></tr><tr><td><code>payload</code></td><td><code>{"code":"&lt;MT:..|code&gt;"}</code></td><td>for the next <code>pair</code></td></tr><tr><td><code>pin</code></td><td><code>{"pin":&lt;n&gt;,"disc":&lt;n&gt;}</code></td><td></td></tr><tr><td><code>debug</code></td><td><code>{"on":&lt;bool&gt;}</code></td><td></td></tr></tbody></table></div>
+<p>Examples:</p>
+<div class="codewrap"><pre class="code lang-json"><code>{"id":10,"cmd":"logic_add","expr":"temp #1 &gt; 28 and schedule 1 on #4"}
+  -&gt; {"id":10,"ok":true}
+
+{"id":11,"cmd":"bind","src":3,"src_ep":1,"dst":4,"action":"toggle"}
+{"id":12,"cmd":"sched_add","n":1,"day":"mon","start":"08:00","end":"17:59"}
+{"id":13,"cmd":"sched_cal","n":1,"on":true}
+{"id":14,"cmd":"calendar_add","date":"25/12"}
+{"id":15,"cmd":"tz","offset":"+08:00"}
+{"id":16,"cmd":"name","dev":4,"label":"Kitchen Plug"}
+{"id":17,"cmd":"calendar_add","date":"31/13"}
+  -&gt; {"id":17,"ok":false,"error":"bad date (DD/MM, ** = any)"}</code></pre></div>
+<h3 id="43-rebooting-actions">4.3 Rebooting actions</h3>
+<p>These respond <strong>first</strong> with <code>{"result":{"rebooting":true}}</code>, then reboot — the connection drops; reconnect and poll <code>status</code> (and, for pairing, the commissioning takes ~1–4 min per device).</p>
+<div class="tablewrap"><table><thead><tr><th><code>cmd</code></th><th>Args</th><th>Notes</th></tr></thead><tbody><tr><td><code>pair</code></td><td><code>{"payload":"&lt;code&gt;"}</code></td><td>reboots into commissioning</td></tr><tr><td><code>pairlist</code></td><td><code>{"payloads":["c1","c2",...]}</code></td><td>batch commission</td></tr><tr><td><code>remove</code></td><td><code>{"dev":&lt;n&gt;}</code></td><td>decommission a device</td></tr><tr><td><code>reset</code></td><td><code>{}</code></td><td>factory reset</td></tr><tr><td><code>restore</code></td><td><code>{"backup":{...},"wipe"?:&lt;bool&gt;}</code></td><td>re-pairs by identity; <code>wipe</code> erases first</td></tr></tbody></table></div>
+<p>Examples:</p>
+<div class="codewrap"><pre class="code lang-json"><code>{"id":20,"cmd":"pair","payload":"22089934501"}
+  -&gt; {"id":20,"ok":true,"result":{"rebooting":true}}
+{"id":21,"cmd":"pairlist","payloads":["25748432181","02259336520"]}
+{"id":22,"cmd":"remove","dev":3}
+{"id":23,"cmd":"restore","backup":{ ...a prior backup result... }}
+{"id":24,"cmd":"restore","backup":{ ... },"wipe":true}</code></pre></div>
+<h3 id="44-live-device-io-async">4.4 Live device I/O (async)</h3>
+<p>These issue a live Matter operation and the response comes back when the device answers (or an ~8 s timeout gives <code>{"ok":false,"error":"device I/O timeout"}</code>). One device-I/O request is in flight at a time; a second gets <code>"device I/O busy"</code>.</p>
+<div class="tablewrap"><table><thead><tr><th><code>cmd</code></th><th>Args</th><th>Result</th></tr></thead><tbody><tr><td><code>read</code></td><td><code>{"dev","ep","cluster","attr"}</code></td><td><code>{"values":[{"ep","cluster","attr","value","text"}]}</code> (<code>value</code> is a number when scalar, else the decoded string)</td></tr><tr><td><code>cluster</code></td><td><code>{"dev","ep","cluster"}</code></td><td>same shape — a wildcard read of every attribute on the cluster</td></tr><tr><td><code>invoke</code></td><td><code>{"dev","ep","cluster","command",  "args"?}</code></td><td><code>{"status","ep","resp"?}</code> — <strong>note <code>command</code></strong> (the top-level key is <code>cmd</code>); <code>args</code> is an esp-matter JSON string</td></tr><tr><td><code>onoff</code></td><td><code>{"dev","action","ep"?}</code></td><td><code>{"status","ep"}</code> — convenience OnOff <code>on</code>/<code>off</code>/<code>toggle</code></td></tr><tr><td><code>write</code></td><td><code>{"dev","ep","cluster","attr","value"}</code></td><td><code>{"sent":true}</code> — <code>value</code> is an esp-matter JSON string; the device's write status shows on the console log</td></tr><tr><td><code>scan</code></td><td><code>{"dev"}</code></td><td><code>{"scanning":true}</code> — re-enumerate; read the tree back via <code>status</code>/console <code>tree</code></td></tr></tbody></table></div>
+<p>Examples:</p>
+<div class="codewrap"><pre class="code lang-json"><code>{"id":30,"cmd":"read","dev":1,"ep":1,"cluster":1026,"attr":0}
+  -&gt; {"id":30,"ok":true,"result":{"values":[{"ep":1,"cluster":1026,"attr":0,
+     "value":2412,"text":"2412"}]}}          # temperature MeasuredValue = 24.12 C
+
+{"id":31,"cmd":"cluster","dev":1,"ep":1,"cluster":1026}   # all attrs of the cluster
+{"id":32,"cmd":"onoff","dev":4,"action":"toggle"}
+  -&gt; {"id":32,"ok":true,"result":{"status":0,"ep":1}}
+{"id":33,"cmd":"invoke","dev":4,"ep":1,"cluster":6,"command":1}      # OnOff On
+{"id":34,"cmd":"write","dev":1,"ep":0,"cluster":40,"attr":5,"value":"{\"0:STR\":\"Hub\"}"}
+{"id":35,"cmd":"scan","dev":1}</code></pre></div>
+<p>Cluster/attribute ids are plain JSON numbers (decimal): temp <code>0x0402</code>=1026, OnOff <code>0x0006</code>=6, BasicInfo <code>0x0028</code>=40.</p>
+<p><strong>Still console-only:</strong> <code>blescan</code> (commissionable BLE scan) and the live <code>dash</code> sweep — use the console for those.</p>
+<h2 id="5-common-workflows">5. Common workflows</h2>
+<p><strong>Commission a few devices, label them (console):</strong></p>
+<div class="codewrap"><pre class="code lang-"><code>pairlist 22089934501 25748432181 02259336520
+name 1 Living Room Air
+name 4 Fan Plug
+devices</code></pre></div>
+<p><strong>Fan follows temperature (console):</strong></p>
+<div class="codewrap"><pre class="code lang-"><code>logic add temp #1 &gt; 28 hyst 0.5 on #4     # on at 28.0, off at 27.5, auto-tracks</code></pre></div>
+<p><strong>Office hours, holiday-aware (console):</strong></p>
+<div class="codewrap"><pre class="code lang-"><code>tz +08:00
+settime 2026-08-05 09:00:00 +08:00
+sched 1 mon add 08:00 17:59
+sched 1 tue add 08:00 17:59
+sched 1 wed add 08:00 17:59
+sched 1 thu add 08:00 17:59
+sched 1 fri add 08:00 17:59
+sched 1 holiday add 00:00 00:00           # effectively off on holidays
+sched 1 cal on
+calendar add 25/12
+calendar add 01/01
+logic add schedule 1 on #4                # plug on only during office hours</code></pre></div>
+<p><strong>Air-quality + schedule + grouping (JSON):</strong></p>
+<div class="codewrap"><pre class="code lang-json"><code>{"cmd":"logic_add","expr":"schedule 1 and ( temp #1 &gt; 26 or co2 #1 &gt; 1000 ) on #4"}</code></pre></div>
+<p><strong>Read all sensors periodically (JSON):</strong></p>
+<div class="codewrap"><pre class="code lang-python"><code>while True:
+    print(call({"cmd":"status"})["result"]["devices"])
+    time.sleep(30)</code></pre></div>
+<p><strong>Clone one hub's config to another (JSON):</strong></p>
+<div class="codewrap"><pre class="code lang-python"><code>cfg = call({"cmd":"backup"})["result"]          # from hub A
+callB({"cmd":"restore","backup":cfg,"wipe":True})  # onto hub B (re-pairs from payloads)</code></pre></div>
+<h2 id="6-specifications-limits">6. Specifications &amp; limits</h2>
+<div class="tablewrap"><table><thead><tr><th>Item</th><th>Limit / value</th></tr></thead><tbody><tr><td>Paired devices</td><td><strong>7</strong></td></tr><tr><td>Sensors tracked</td><td><code>temp</code> (°C), <code>humidity</code> (%), <code>co2</code> (ppm), <code>pm25</code> (µg/m³)</td></tr><tr><td>Logic rules</td><td><strong>12</strong></td></tr><tr><td>Terms per rule (top-level, gate-joined)</td><td><strong>4</strong></td></tr><tr><td>Conditions per term (one <code>( )</code> group)</td><td><strong>3</strong></td></tr><tr><td>Grouping depth</td><td><strong>one level</strong> of parentheses</td></tr><tr><td>Source devices per condition (avg/min/max)</td><td><strong>4</strong></td></tr><tr><td>Target devices per rule</td><td><strong>4</strong></td></tr><tr><td>Operators / gates / aggregation</td><td><code>&gt; &gt;= &lt; &lt;=</code> / <code>and or xor</code> / <code>avg min max</code></td></tr><tr><td>Actions / modes</td><td><code>on off toggle</code> / <code>track</code> (default), <code>oneshot</code></td></tr><tr><td>Default hysteresis</td><td>temp 0.5, humidity 2.0, co2 50, pm25 5</td></tr><tr><td>Logic re-evaluation</td><td>on each sensor report; time rules every ~30 s; safety re-assert every 120 s</td></tr><tr><td>Hub-mediated bindings</td><td><strong>12</strong></td></tr><tr><td>Schedulers</td><td><strong>4</strong> (each: Mon–Sun + 1 holiday day-schedule)</td></tr><tr><td>Events per day-schedule</td><td><strong>4</strong>, non-overlapping</td></tr><tr><td>Calendar holidays (shared)</td><td><strong>20</strong> (<code>DD/MM</code>, <code>**</code> = any day and/or any month)</td></tr><tr><td>Time base</td><td>local = UTC + tz; schedule times are local <code>HH:MM</code></td></tr><tr><td>Clock</td><td>set via <code>settime</code>; <strong>not battery-backed</strong> — lost on every reboot</td></tr><tr><td>JSON request line</td><td>up to ~1.2 KB</td></tr><tr><td>Ports / baud</td><td>console <code>COM12</code>, JSON <code>COM7</code>; both 115200, 8N1</td></tr></tbody></table></div>
+<h2 id="7-notes-caveats">7. Notes &amp; caveats</h2>
+<ul><li><strong>Clock after reboot.</strong> The hub has no RTC; after a reboot the time is unset and <code>schedule</code>/<code>calendar</code> conditions read <strong>false</strong> (fail-safe — nothing fires on a wrong time). Re-send <code>settime</code> at connect (the JSON port makes this easy for a host program).</li><li><strong>Offline devices.</strong> A device that has dropped off Thread shows <code>enumerated:false</code> / <code>online:false</code> (last-known identity kept). Logic/bind <strong>targets must be enumerated</strong> (<code>scan &lt;n&gt;</code> to re-enumerate); IKEA devices re-attach staggered over ~2–5 min after a hub reboot. Sleepy ICD devices (buttons) may take ~1 min.</li><li><strong>Commissioning is reboot-isolated.</strong> <code>pair</code>/<code>pairlist</code>/<code>restore</code> reboot into a BLE commissioning session and back; the hub is briefly offline. The JSON port is <strong>not served during commissioning</strong> (it starts only in operating mode) to protect the heap-tight commissioning window.</li><li><strong>Restore re-pairs by identity.</strong> Matter credentials cannot be exported, so <code>restore</code> re-pairs each backup device from its payload; bindings/logic follow the device by identity regardless of the slot it lands in. A device that does not re-pair has its rules <strong>skipped and reported</strong>. <code>restore wipe</code> erases the current fabric first (each device must be back in pairing mode to re-commission).</li><li><strong>Heap.</strong> Operating free heap is ~40 KB; watch it (<code>heap</code>) if you push near the device/rule limits.</li><li><strong>Two interfaces, one truth.</strong> Console and JSON call the same validated core, so a rule added on one shows up on the other; <code>backup</code> captures everything.</li></ul>
+<p>*Firmware: Matter Hub V1.0, branch <code>v1.8-dev</code>. Build from a space-free path (<code>C:\mho</code>); flash on COM12. See <code>FOUNDATION.md</code> for architecture and <code>STATUS.md</code> for current state.*</p></main></div>
+<script>
+(function(){
+  var links=[].slice.call(document.querySelectorAll('.toc a'));
+  var map={}; links.forEach(function(a){map[a.getAttribute('href').slice(1)]=a;});
+  var heads=[].slice.call(document.querySelectorAll('h2[id],h3[id]'));
+  var obs=new IntersectionObserver(function(es){
+    es.forEach(function(e){
+      if(e.isIntersecting){
+        var a=map[e.target.id]; if(!a)return;
+        links.forEach(function(x){x.classList.remove('active');});
+        a.classList.add('active');
+      }
+    });
+  },{rootMargin:'0px 0px -78% 0px',threshold:0});
+  heads.forEach(function(h){obs.observe(h);});
+})();
+</script>

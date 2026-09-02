@@ -1,0 +1,6 @@
+version: "1.0.0"
+dependencies:
+  espressif/esp_matter:
+    version: ">=1.4.0"
+  espressif/mdns:
+    version: ">=1.0.0"

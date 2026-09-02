@@ -1,0 +1,832 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Matter Gateway Portal</title>
+<style>
+  :root{--bg:#0f1420;--card:#1a2233;--card2:#141b29;--line:#2b3650;--fg:#e6ecf5;--mut:#8fa0bd;
+        --acc:#4ea1ff;--on:#37d67a;--off:#5a6782;--bad:#ff6b6b;--warn:#ffcf5c;--rad:12px;}
+  *{box-sizing:border-box}
+  body{margin:0;font:14px/1.45 system-ui,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--fg)}
+  a{color:var(--acc)}
+  header{display:flex;align-items:center;gap:12px;padding:10px 16px;border-bottom:1px solid var(--line);
+         position:sticky;top:0;background:var(--bg);z-index:5;flex-wrap:wrap}
+  header h1{font-size:15px;margin:0;font-weight:650;white-space:nowrap}
+  .pill{font-size:12px;padding:3px 10px;border-radius:20px;border:1px solid var(--line);color:var(--mut)}
+  .pill.online{color:var(--on);border-color:var(--on)}
+  .pill.offline,.pill.commissioning{color:var(--bad);border-color:var(--bad)}
+  .sub{color:var(--mut);font-size:12px}
+  nav.tabs{display:flex;gap:4px;padding:6px 12px 0;border-bottom:1px solid var(--line);position:sticky;top:47px;background:var(--bg);z-index:4;overflow-x:auto}
+  .tab{font:inherit;color:var(--mut);background:none;border:0;border-bottom:2px solid transparent;padding:8px 12px;cursor:pointer;white-space:nowrap}
+  .tab.sel{color:var(--fg);border-bottom-color:var(--acc)}
+  main{padding:16px;max-width:1080px;margin:0 auto}
+  .panel{display:none} .panel.show{display:block}
+  h2{font-size:15px;margin:2px 0 12px;font-weight:600}
+  h3{margin:0 0 2px;font-size:14px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--rad);padding:12px 14px}
+  .card .meta{color:var(--mut);font-size:12px;margin-bottom:8px}
+  .sensors{display:flex;flex-wrap:wrap;row-gap:3px;font-size:13px;margin-bottom:6px;align-items:baseline}
+  .sensors .si{white-space:nowrap}
+  .sensors .si:not(:last-child){margin-right:8px}
+  .sensors .si:not(:last-child)::after{content:'·';opacity:.45;margin-left:8px}
+  .sensors b{color:var(--acc);font-weight:600}
+  .lightctl{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;margin-bottom:8px}
+  .lrow{display:inline-flex;align-items:center;gap:6px;font-size:13px}
+  .lrow input[type=range]{width:104px}
+  .lrow input[type=color]{width:34px;height:24px;padding:0;border:1px solid var(--line);border-radius:5px;background:none;cursor:pointer}
+  .lval{min-width:34px;color:var(--acc)}
+  .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--off);margin-right:5px;vertical-align:middle}
+  .dot.up{background:var(--on)}
+  button{font:inherit;color:var(--fg);background:#26324a;border:1px solid var(--line);border-radius:8px;padding:6px 11px;cursor:pointer}
+  button:hover{border-color:var(--acc)} button:disabled{opacity:.45;cursor:default}
+  button.on{background:var(--on);color:#04210f;border-color:var(--on)}
+  button.prim{background:var(--acc);color:#04213f;border-color:var(--acc)}
+  button.ghost{background:none} button.sm{padding:3px 8px;font-size:12px}
+  button.danger{border-color:#7a3550;color:#ffb3c6}
+  .row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .row.mt{margin-top:8px} .toolbar{display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap}
+  input,select{font:inherit;color:var(--fg);background:#0b0f18;border:1px solid var(--line);border-radius:8px;padding:6px 9px}
+  input{min-width:0}
+  table{border-collapse:collapse;width:100%;font-size:13px}
+  .scroll{overflow-x:auto;overflow-y:hidden;padding-bottom:12px}
+  .sec{background:var(--card);border:1px solid var(--line);border-radius:var(--rad);padding:14px;margin-bottom:16px}
+  .list{display:flex;flex-direction:column;gap:6px}
+  .item{display:flex;align-items:center;gap:10px;background:var(--card2);border:1px solid var(--line);border-radius:8px;padding:7px 10px}
+  .item .g{flex:1;min-width:0}
+  .chip{display:inline-flex;align-items:center;gap:6px;background:var(--card2);border:1px solid var(--line);border-radius:16px;padding:2px 4px 2px 10px;font-size:12px}
+  .cal-wrap{max-width:344px}
+  .cal-nav{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
+  .cal-nav b{font-size:14px}
+  .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
+  .cal-dow{text-align:center;font-size:11px;color:var(--mut);padding:2px 0}
+  .cal-cell{aspect-ratio:1;display:flex;align-items:center;justify-content:center;font-size:12px;border:1px solid var(--line);border-radius:6px;background:var(--card2);cursor:pointer;position:relative}
+  .cal-cell:hover{border-color:var(--acc)}
+  .cal-cell.cal-empty{border:none;background:none;cursor:default}
+  .cal-cell.cal-hol{background:linear-gradient(180deg,#d9534f,#8f2f2c);color:#fff;border-color:#8f2f2c;font-weight:600}
+  .cal-wild{position:absolute;bottom:3px;width:4px;height:4px;border-radius:50%;background:#fff8}
+  .cal-list{margin-top:12px;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+  .spin{display:inline-block;width:13px;height:13px;border:2px solid var(--line);border-top-color:var(--acc);border-radius:50%;animation:spin .7s linear infinite;vertical-align:-2px}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .busy{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--acc)}
+  .loading{display:flex;align-items:center;gap:9px;color:var(--mut);font-size:13px;padding:18px 2px}
+  .chip button{padding:1px 7px;border-radius:12px;font-size:12px;line-height:1}
+  .mono{font-family:ui-monospace,Consolas,monospace}
+  .wsched{display:grid;grid-template-columns:54px repeat(8,minmax(44px,1fr));user-select:none;min-width:560px}
+  .ws-head{height:24px;display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--mut);border-bottom:1px solid var(--line)}
+  .ws-head.hol{color:var(--warn)}
+  .ws-track{position:relative;height:328px;border-left:1px solid var(--line);cursor:crosshair;touch-action:none;
+    background-image:linear-gradient(var(--line) 1px,transparent 1px);background-size:100% 41px}
+  .ws-day:last-child .ws-track{border-right:1px solid var(--line)}
+  .ws-times .ws-track{border:none;background:none;cursor:default}
+  .ws-tlabel{position:absolute;right:6px;transform:translateY(-50%);font-size:10px;color:var(--mut);white-space:nowrap}
+  .ws-block{position:absolute;left:2px;right:2px;min-height:9px;border-radius:3px;overflow:hidden;cursor:move;
+    background:linear-gradient(180deg,#d9534f,#8f2f2c);color:#fff;font-size:10px;line-height:1;
+    display:flex;align-items:center;justify-content:center;box-shadow:inset 0 0 0 1px #0005}
+  .ws-block:hover{outline:1px solid var(--fg);z-index:2}
+  .ws-block.sel{outline:2px solid var(--acc);box-shadow:0 0 0 2px var(--acc),0 0 8px #4ea1ff88;z-index:3}
+  .ws-block::before,.ws-block::after{content:"";position:absolute;left:0;right:0;height:6px;cursor:ns-resize}
+  .ws-block::before{top:0} .ws-block::after{bottom:0}
+  .ws-preview{opacity:.8;pointer-events:none;outline:1px dashed rgba(255,255,255,.7)}
+  .ws-dragtip{position:absolute;right:3px;background:var(--acc);color:#04213f;font:700 10px/1.35 ui-monospace,SFMono-Regular,Menlo,monospace;padding:1px 6px;border-radius:5px;white-space:nowrap;pointer-events:none;z-index:6;box-shadow:0 1px 5px #0007;transform:translateY(-1px)}
+  .ws-tabs{display:flex;gap:5px;align-items:center;margin-bottom:10px;flex-wrap:wrap}
+  .ws-tab{font:inherit;font-size:13px;padding:5px 11px;border-radius:7px;background:#26324a;border:1px solid var(--line);color:var(--fg);cursor:pointer}
+  .ws-tab.sel{background:var(--acc);color:#04213f;border-color:var(--acc)} .ws-tab.un{opacity:.55}
+  .ws-editor{margin-top:14px} .ws-editor .row{gap:12px;align-items:flex-end}
+  .ws-editor label{display:flex;flex-direction:column;gap:3px}
+  .ws-daysel{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:10px}
+  .ws-dchip{font:inherit;font-size:12px;padding:4px 10px;border-radius:14px;background:#26324a;border:1px solid var(--line);color:var(--mut);cursor:pointer}
+  .ws-dchip.sel{background:var(--on);color:#04210f;border-color:var(--on)}
+  .gauge{height:8px;background:#0b0f18;border-radius:6px;overflow:hidden;border:1px solid var(--line)}
+  .gauge > i{display:block;height:100%;background:var(--acc)}
+  #log{font-family:ui-monospace,Consolas,monospace;font-size:12px;color:var(--mut);background:#0b0f18;border:1px solid var(--line);border-radius:8px;padding:8px 10px;max-height:260px;overflow:auto;white-space:pre-wrap}
+  .kv{display:grid;grid-template-columns:130px 1fr;gap:6px 12px;font-size:13px}
+  .kv b{color:var(--mut);font-weight:500}
+  .cfgform{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:11px 18px}
+  .cfgform label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--mut)}
+  .cfgform input{width:100%}
+  .chartwrap{background:#0b0f18;border:1px solid var(--line);border-radius:8px;padding:6px 4px 2px;overflow-x:auto}
+  .legend{display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:8px;font-size:12px;color:var(--mut)}
+  .lg{display:inline-flex;align-items:center;gap:6px} .lg i{width:14px;height:3px;border-radius:2px;display:inline-block}
+  .lg b{color:var(--fg);font-weight:600}
+  .ctip{position:absolute;pointer-events:none;opacity:0;transition:opacity .08s;z-index:6;
+        background:#12203a;border:1px solid var(--line);border-radius:8px;padding:6px 9px;font-size:12px;
+        color:var(--mut);display:flex;flex-direction:column;gap:3px;box-shadow:0 4px 16px #0009;white-space:nowrap}
+  .ctip .tt{color:var(--fg);font-weight:600;font-size:11px}
+  #toasts{position:fixed;right:14px;bottom:14px;display:flex;flex-direction:column;gap:8px;z-index:20}
+  .toast{background:#12203a;border:1px solid var(--acc);color:var(--fg);border-radius:8px;padding:9px 13px;font-size:13px;box-shadow:0 6px 18px #0008;max-width:320px}
+  .toast.bad{border-color:var(--bad)}
+  .modal-bg{position:fixed;inset:0;background:#000a;display:flex;align-items:center;justify-content:center;z-index:30}
+  .modal{background:var(--card);border:1px solid var(--line);border-radius:var(--rad);padding:18px;width:min(420px,92vw)}
+  .modal h3{margin:0 0 12px;font-size:15px}
+  .modal label{display:block;margin-bottom:10px;font-size:13px;color:var(--mut)}
+  .modal input,.modal select{width:100%;margin-top:4px}
+  .modal-row{display:flex;justify-content:flex-end;gap:8px;margin-top:6px}
+  .modal.lgm{display:block;width:min(600px,94vw);max-height:92vh;overflow-y:auto}
+  .lg-ref{background:var(--card2);border:1px solid var(--line);border-radius:8px;padding:9px 12px;font-size:12.5px;line-height:1.6;margin:2px 0 12px;color:var(--mut)}
+  .lg-ref .hd,.lg-ex .hd{color:var(--fg);font-size:11px;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px}
+  .lg-list{max-height:220px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;margin-bottom:12px}
+  .lg-eg{text-align:left;background:var(--card2);border:1px solid var(--line);border-radius:7px;padding:7px 10px;cursor:pointer;color:var(--fg);font:inherit}
+  .lg-eg:hover{border-color:var(--acc)}
+  .lg-eg .mono{display:block;color:var(--acc);font-size:12.5px;word-break:break-word}
+  .lg-egd{display:block;font-size:11.5px;color:var(--mut);margin-top:2px}
+  .hint{color:var(--mut);font-size:12px;margin:4px 0 10px}
+  .empty{color:var(--mut);font-size:13px;padding:6px 2px}
+  .rbanner{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;background:#241d0f;border:1px solid #5a4a1e;color:var(--warn);border-radius:8px;padding:10px 12px;margin:12px 12px 0;font-size:13px}
+  .rbanner b{color:var(--warn)}
+</style>
+</head>
+<body>
+<header>
+  <h1>Matter Gateway Portal</h1>
+  <span id="link" class="pill">connecting…</span>
+  <span id="busy" class="busy" style="display:none"><span class="spin"></span> working…</span>
+  <span id="clock" class="sub"></span>
+</header>
+<nav class="tabs">
+  <button class="tab sel" data-tab="devices">Devices</button>
+  <button class="tab" data-tab="charts">Charts</button>
+  <button class="tab" data-tab="auto">Automation &amp; Scheduler</button>
+  <button class="tab" data-tab="comm">Commissioning</button>
+  <button class="tab" data-tab="console">Console</button>
+  <button class="tab" data-tab="config">Configuration</button>
+</nav>
+<main>
+  <div id="restoreBanner" class="rbanner" style="display:none">
+    <span>&#9203; <b>Restore pending</b> — some bindings/logic rules are waiting for their device(s) to re-commission. They re-apply automatically as you pair the devices.</span>
+    <button class="sm" onclick="cancelRestore()">Cancel restore</button>
+  </div>
+  <section id="tab-devices" class="panel show">
+    <div class="toolbar"><button class="sm" onclick="refreshState()">Refresh</button>
+      <span id="count" class="sub"></span></div>
+    <div id="grid" class="grid"></div>
+  </section>
+
+  <section id="tab-charts" class="panel">
+    <div class="toolbar"><button class="sm" onclick="loadCharts()">Refresh</button>
+      <span class="sub">air-quality trends · each metric on its own y-axis</span></div>
+    <div id="charts"></div>
+  </section>
+
+  <section id="tab-auto" class="panel">
+    <div class="sec">
+      <div class="row" style="justify-content:space-between">
+        <h2 style="margin:0">Logic rules</h2>
+        <button class="sm prim" onclick="addLogic()">+ Add rule</button></div>
+      <div class="hint">Syntax e.g. <span class="mono">temp #1 &gt; 28 and schedule 2 on #5</span> ·
+        <span class="mono">calendar and ( co2 #2 &gt; 1000 or temp #2 &gt; 25 ) on #4</span></div>
+      <div id="logic" class="list"></div>
+    </div>
+    <div class="sec">
+      <div class="row" style="justify-content:space-between">
+        <h2 style="margin:0">Weekly schedule</h2><span class="sub">click to select · double-click to delete · drag to edit</span></div>
+      <div id="scheds"></div>
+    </div>
+    <div class="sec">
+      <h2 style="margin:0 0 4px">Holiday calendar</h2>
+      <div class="hint">Click a day to mark it a public holiday (recurring every year). On those days, a scheduler with Holiday-override uses its <b>Hol</b> column instead of the weekday.</div>
+      <div id="calendar"></div>
+    </div>
+    <div class="sec">
+      <div class="row" style="justify-content:space-between">
+        <h2 style="margin:0">Device bindings</h2>
+        <button class="sm prim" onclick="addBind()">+ Add binding</button></div>
+      <div class="hint">Relay a button press to a plug (source switch → target OnOff).</div>
+      <div id="bindings" class="list"></div>
+    </div>
+  </section>
+
+  <section id="tab-comm" class="panel">
+    <div class="sec">
+      <h2>Add a device</h2>
+      <div class="hint">Scan for commissionable devices (BLE), then pair with the full setup payload from the device label.
+        Pairing <b>reboots the hub</b> (~1–4 min) — the portal reconnects automatically.</div>
+      <div class="row">
+        <button id="scanBtn" onclick="bleScan()">BLE scan (8s)</button>
+        <button class="prim" onclick="pairDevice()">Pair by payload…</button>
+      </div>
+      <div id="scanRes" class="list" style="margin-top:12px"></div>
+    </div>
+  </section>
+
+  <section id="tab-console" class="panel">
+    <div class="sec">
+      <h2>Hub heap</h2>
+      <div id="heap"></div>
+      <div class="row mt"><button class="sm" onclick="loadConsole()">Refresh</button></div>
+    </div>
+    <div class="sec">
+      <h2>Backup &amp; restore</h2>
+      <div class="hint">Save the hub's full configuration — devices, bindings, logic rules and schedules — to a JSON file you can keep, or restore the hub from one.</div>
+      <div class="row mt">
+        <button class="sm prim" onclick="doBackup()">&#8595; Backup to file</button>
+        <button class="sm" onclick="doRestore()">&#8593; Restore from file&#8230;</button>
+        <button class="sm ghost" onclick="showBackup()">View JSON</button>
+      </div>
+    </div>
+    <div class="sec">
+      <div class="row" style="justify-content:space-between"><h2 style="margin:0">WebSocket traffic</h2>
+        <button class="sm ghost" onclick="document.getElementById('log').textContent=''">clear</button></div>
+      <div id="log"></div>
+    </div>
+  </section>
+
+  <section id="tab-config" class="panel">
+    <div class="sec">
+      <h2>Status</h2>
+      <div id="cfgStatus" class="kv"></div>
+    </div>
+    <div class="sec">
+      <h2>Settings</h2>
+      <div class="hint">Saved on the gateway. <b>Timezone &amp; poll interval apply immediately</b>;
+        Wi-Fi / SoftAP / hostname / NTP changes take effect after a reboot.</div>
+      <div class="cfgform">
+        <label>Poll interval (s)<input id="c_poll" type="number" min="1" max="60"></label>
+        <label>Timezone<input id="c_tz" placeholder="+08:00"></label>
+        <label>NTP server<input id="c_ntp" placeholder="pool.ntp.org"></label>
+        <label>Hostname (.local)<input id="c_host" placeholder="esp32"></label>
+        <label>Wi-Fi SSID (2.4GHz)<input id="c_ssid"></label>
+        <label>Wi-Fi password<input id="c_spass" type="password" placeholder="unchanged"></label>
+        <label>SoftAP name<input id="c_apssid" placeholder="auto (MatterGateway-XXXX)"></label>
+        <label>SoftAP password<input id="c_appass" type="password" placeholder="unchanged (min 8)"></label>
+      </div>
+      <div class="row mt"><button class="prim" onclick="saveCfg()">Save</button>
+        <button class="sm danger" onclick="rebootS3()">Reboot gateway</button>
+        <span id="cfgMsg" class="sub"></span></div>
+    </div>
+  </section>
+</main>
+<div id="toasts"></div>
+
+<script>
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+const esc=s=>(s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmt=v=>typeof v==='number'?Math.round(v*10)/10:v;
+const hhmm=m=>String(m/60|0).padStart(2,'0')+':'+String(m%60).padStart(2,'0');
+const parseHM=s=>{const m=/^(\d{1,2}):(\d{2})$/.exec((s||'').trim());if(!m)return null;const h=+m[1],mi=+m[2];return(h>23||mi>59)?null:h*60+mi;};
+const UNIT={temp:'°C',humidity:'%',co2:'ppm',pm25:'µg/m³'};
+const DAYS=['mon','tue','wed','thu','fri','sat','sun','holiday'];
+const DLBL=['Mon','Tue','Wed','Thu','Fri','Sat','Sun','Hol'];
+
+let ws,tagn=0,pending={},busyN=0,busyT=null;
+const st={link:{},devices:[],tab:'devices'};
+function busyInc(){busyN++;if(busyN===1)busyT=setTimeout(()=>{if(busyN>0){const b=$('#busy');if(b)b.style.display='inline-flex';}},450);}
+function busyDec(){if(--busyN<=0){busyN=0;clearTimeout(busyT);const b=$('#busy');if(b)b.style.display='none';}}
+
+function log(m){const l=$('#log');if(!l)return;l.textContent+=m+'\n';l.scrollTop=l.scrollHeight;}
+function toast(msg,bad){const t=document.createElement('div');t.className='toast'+(bad?' bad':'');t.textContent=msg;$('#toasts').appendChild(t);setTimeout(()=>t.remove(),3600);}
+
+function req(obj){return new Promise(resolve=>{const tag='t'+(++tagn);obj.tag=tag;busyInc();
+  const done=v=>{busyDec();resolve(v);};pending[tag]=done;
+  try{ws.send(JSON.stringify(obj));log('→ '+JSON.stringify(obj));}catch{done({ok:false,error:'ws closed'});return;}
+  setTimeout(()=>{if(pending[tag]){delete pending[tag];done({ok:false,error:'timeout'});}},12000);});}
+async function act(obj,okmsg){const r=await req(obj);toast(r.ok?(okmsg||'Done'):('Error: '+(r.error||'failed')),!r.ok);
+  if(r.ok&&r.result&&r.result.rebooting)toast('Hub rebooting (~1–4 min) — reconnecting…');return r;}
+
+function connect(){
+  ws=new WebSocket('ws://'+location.host+'/ws');
+  ws.onopen=()=>{$('#link').textContent='ws open';};
+  ws.onclose=()=>{const el=$('#link');el.textContent='disconnected';el.className='pill offline';setTimeout(connect,1500);};
+  ws.onmessage=ev=>{let m;try{m=JSON.parse(ev.data);}catch{return;}
+    if(m.type==='reply'){const cb=pending[m.tag];delete pending[m.tag];log('← '+(m.tag||'')+' '+(m.ok?'ok':'ERR '+(m.error||'')));if(cb)cb(m);}
+    else if(m.type==='state'){st.devices=m.devices||[];st.restorePending=!!m.restore_pending;renderRestoreBanner();ingestCharts(m.devices);if(st.tab==='devices')renderDevices();else if(st.tab==='charts'&&!chartsHover)renderCharts();}
+    else if(m.type==='link'){st.link=m;renderLink();}};
+}
+/* The hub clock arrives only in a link frame (connect/change), so tick it forward
+ * locally between frames and re-baseline on each new one. */
+let clkBase=null,clkAt=0;
+const clkPad=n=>String(n).padStart(2,'0');
+function hubClockStr(){
+  if(clkBase!=null){const d=new Date(clkBase+(Date.now()-clkAt));
+    return `${d.getFullYear()}-${clkPad(d.getMonth()+1)}-${clkPad(d.getDate())} ${clkPad(d.getHours())}:${clkPad(d.getMinutes())}:${clkPad(d.getSeconds())}`;}
+  return st.link.clock||'';
+}
+function renderClock(){const s=hubClockStr();
+  const el=$('#clock');if(el)el.textContent=(st.link.ip?st.link.ip+'  ':'')+s;
+  const cc=$('#cfgClock');if(cc)cc.textContent=s||'not set';}
+setInterval(renderClock,1000);
+function renderLink(){const m=st.link,el=$('#link');el.textContent='hub '+(m.c6||'?');el.className='pill '+(m.c6||'');
+  const t=m.clock?Date.parse(m.clock.replace(' ','T')):NaN;   /* naive string = local time */
+  if(!isNaN(t)){clkBase=t;clkAt=Date.now();}else clkBase=null;
+  renderClock();}
+function renderRestoreBanner(){const b=$('#restoreBanner');if(b)b.style.display=st.restorePending?'flex':'none';}
+async function cancelRestore(){await act({cmd:'restore',cancel:true},'Restore cancelled');st.restorePending=false;renderRestoreBanner();}
+async function refreshState(){const r=await req({cmd:'status'});if(r.ok&&r.result){st.devices=r.result.devices||[];st.restorePending=!!r.result.restore_pending;renderRestoreBanner();renderDevices();}}
+
+/* modal input dialog: fields=[{label,placeholder,value,type,options}] -> [values]|null */
+function dialog(title,fields){return new Promise(res=>{
+  const w=document.createElement('div');w.className='modal-bg';
+  w.innerHTML=`<div class="modal"><h3>${esc(title)}</h3>${fields.map((f,i)=>{
+    if(f.type==='select')return `<label>${esc(f.label)}<select id="d${i}">${f.options.map(o=>`<option value="${esc(o[0])}" ${o[0]==f.value?'selected':''}>${esc(o[1])}</option>`).join('')}</select></label>`;
+    return `<label>${esc(f.label)}<input id="d${i}" placeholder="${esc(f.placeholder||'')}" value="${esc(f.value==null?'':f.value)}"></label>`;}).join('')}
+    <div class="modal-row"><button class="ghost" id="dC">Cancel</button><button class="prim" id="dO">OK</button></div></div>`;
+  document.body.appendChild(w);
+  const done=v=>{w.remove();res(v);};
+  w.querySelector('#dC').onclick=()=>done(null);
+  w.querySelector('#dO').onclick=()=>done(fields.map((f,i)=>w.querySelector('#d'+i).value));
+  w.onclick=e=>{if(e.target===w)done(null);};
+  w.addEventListener('keydown',e=>{if(e.key==='Enter')done(fields.map((f,i)=>w.querySelector('#d'+i).value));if(e.key==='Escape')done(null);});
+  setTimeout(()=>w.querySelector('#d0')?.focus(),40);});}
+
+/* ---------- Devices ---------- */
+function renderDevices(){
+  $('#count').textContent=st.devices.length+' device(s)';
+  $('#grid').innerHTML=st.devices.map(d=>{
+    const s=d.sensors||{};
+    const parts=Object.keys(UNIT).filter(k=>k in s).map(k=>`<span class="si">${k} <b>${fmt(s[k])}</b> ${UNIT[k]}</span>`);
+    if(d.battery!=null)parts.push(`<span class="si">batt <b>${fmt(d.battery)}</b> %</span>`);
+    const sens=parts.length?`<div class="sensors">${parts.join('')}</div>`:'';
+    const ctl=d.hasOnOff?`<button class="${d.onoff?'on':''} sm" onclick="toggle(${d.slot})">${d.onoff?'ON':'OFF'} — toggle</button>`:'';
+    const light=(d.hasLevel||d.hasColor)?lightControls(d):'';
+    return `<div class="card"><h3>#${d.slot} ${esc(d.label||d.name||'?')}</h3>
+      <div class="meta"><span class="dot ${d.online?'up':''}"></span>${d.online?'online':'offline'}${d.rssi!=null?' · rssi '+d.rssi:''}
+        ${d.vid!=null?` · ${d.vid.toString(16)}/${(d.pid||0).toString(16)}`:''}</div>
+      ${sens}${light}
+      <div class="row mt">${ctl}
+        <button class="sm ghost" onclick="rename(${d.slot},'${esc(d.label||d.name||'')}')">Rename</button>
+        <button class="sm ghost" onclick="inspect(${d.slot})">Inspect</button>
+        <button class="sm danger" onclick="removeDev(${d.slot},'${esc(d.label||d.name||'#'+d.slot)}')">Remove</button></div></div>`;
+  }).join('')||'<div class="empty">No devices paired. Use the Commissioning tab to add one.</div>';
+}
+async function toggle(dev){await act({cmd:'onoff',dev,action:'toggle'},'Toggled #'+dev);refreshState();}
+/* --- dimmable / colour light controls (LevelControl 0x0008 + ColorControl 0x0300) --- */
+const lc={};                                   // slot -> {level:1..100, color:'#rrggbb'} (kept so re-renders don't reset the sliders)
+function lcState(slot){return lc[slot]||(lc[slot]={level:100,color:'#ffcaa0'});}
+function lightControls(d){
+  const s=lcState(d.slot), ep=d.lightEp||1; let h='<div class="lightctl">';
+  if(d.hasLevel) h+=`<label class="lrow">☀<input type="range" min="1" max="100" value="${s.level}" oninput="this.nextElementSibling.textContent=this.value+'%'" onchange="setLevel(${d.slot},this.value,${ep})"><span class="lval">${s.level}%</span></label>`;
+  if(d.hasColor) h+=`<label class="lrow">🎨<input type="color" value="${s.color}" onchange="setColor(${d.slot},this.value,${ep})"></label>`;
+  return h+'</div>';
+}
+async function setLevel(slot,pct,ep){lcState(slot).level=+pct;const lvl=Math.max(1,Math.round(pct*254/100));
+  await act({cmd:'invoke',dev:slot,ep,cluster:8,command:0,args:`{"0:U8":${lvl},"1:U16":0,"2:U8":0,"3:U8":0}`},'Brightness '+pct+'%');}
+function hexToHueSat(hex){
+  const r=parseInt(hex.substr(1,2),16)/255,g=parseInt(hex.substr(3,2),16)/255,b=parseInt(hex.substr(5,2),16)/255;
+  const mx=Math.max(r,g,b),mn=Math.min(r,g,b),df=mx-mn; let hu=0;
+  if(df){ if(mx===r)hu=((g-b)/df)%6; else if(mx===g)hu=(b-r)/df+2; else hu=(r-g)/df+4; hu*=60; if(hu<0)hu+=360; }
+  return {hue:Math.round(hu*254/360), sat:Math.round((mx?df/mx:0)*254)};
+}
+async function setColor(slot,hex,ep){lcState(slot).color=hex;const {hue,sat}=hexToHueSat(hex);
+  await act({cmd:'invoke',dev:slot,ep,cluster:768,command:6,args:`{"0:U8":${hue},"1:U8":${sat},"2:U16":0,"3:U8":0,"4:U8":0}`},'Colour set');}
+async function rename(dev,cur){const v=await dialog('Rename device #'+dev,[{label:'Label',value:cur,placeholder:'e.g. Living Room'}]);
+  if(v){await act({cmd:'name',dev,label:v[0]},'Renamed');refreshState();}}
+async function removeDev(dev,nm){const v=await dialog('Decommission '+nm+'?',[{label:'Type REMOVE to confirm (reboots hub)',placeholder:'REMOVE'}]);
+  if(v&&v[0]==='REMOVE')act({cmd:'remove',dev},'Removing #'+dev+' — hub rebooting');}
+async function inspect(dev){const v=await dialog('Read attribute — device #'+dev,
+  [{label:'Endpoint',value:'0'},{label:'Cluster (hex or dec)',value:'0x28'},{label:'Attribute',value:'0'}]);
+  if(!v)return;const ep=+v[0],cl=parseInt(v[1]),at=parseInt(v[2]);
+  const r=await req({cmd:'read',dev,ep,cluster:cl,attr:at});
+  if(r.ok&&r.result&&r.result.values&&r.result.values[0])
+    dialog('Read result',[{label:`ep${ep} cl ${v[1]} attr ${v[2]}`,value:r.result.values[0].text??JSON.stringify(r.result.values[0].value)}]);
+  else toast('Read failed: '+(r.error||'no data'),true);
+}
+
+/* ---------- Charts ---------- */
+const chartHist={};   // slot -> {t:[],temp:[],hum:[],co2:[],pm25:[]}
+const CH_CAP=720;
+let chartsHover=false; // pause auto-redraw while the cursor is reading the chart
+const isAir=d=>d.sensors&&('temp'in d.sensors||'humidity'in d.sensors||'co2'in d.sensors||'pm25'in d.sensors);
+function ingestCharts(devs){const now=Math.floor(Date.now()/1000);
+  for(const d of (devs||[])){ if(!isAir(d))continue; const s=d.sensors;
+    const h=chartHist[d.slot]||(chartHist[d.slot]={t:[],temp:[],hum:[],co2:[],pm25:[]});
+    if(h.t.length&&now-h.t[h.t.length-1]<2)continue;
+    h.t.push(now);h.temp.push(s.temp??null);h.hum.push(s.humidity??null);h.co2.push(s.co2??null);h.pm25.push(s.pm25??null);
+    if(h.t.length>CH_CAP)for(const k in h)h[k].splice(0,h[k].length-CH_CAP); }}
+async function loadCharts(){const r=await req({cmd:'history',dev:0});
+  if(r.ok&&r.result)for(const d of r.result.devices)chartHist[d.slot]={t:d.t,temp:d.temp,hum:d.hum,co2:d.co2,pm25:d.pm25};
+  renderCharts();}
+const CH_HM=s=>{const d=new Date(s*1000);return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');};
+const lastNum=a=>{for(let i=a.length-1;i>=0;i--)if(a[i]!=null)return a[i];return null;};
+function chSpan(t){const s=(t[t.length-1]-t[0])||0,m=Math.round(s/60);return m<1?'<1m':m<60?m+'m':Math.floor(m/60)+'h'+String(m%60).padStart(2,'0');}
+function svgChart(t,series){
+  // proper multi-axis chart: Temp+Humidity axes on the left, CO2+PM2.5 on the right;
+  // each a colour-matched vertical scale with ticks. Shared gridlines (4 rows).
+  const W=720,H=250,mT=18,mB=26,plotT=mT,plotB=H-mB,plotH=plotB-plotT,plotL=100,plotR=620;
+  const axDef=[{x:44,side:'L'},{x:92,side:'L'},{x:628,side:'R'},{x:676,side:'R'}];
+  const tmin=t[0],tmax=t[t.length-1]===tmin?tmin+1:t[t.length-1],tsp=tmax-tmin;
+  const xOf=tt=>plotL+(tt-tmin)/tsp*(plotR-plotL);
+  let grid='';for(let i=0;i<4;i++){const y=plotT+plotH*i/3;grid+=`<line x1="${plotL}" y1="${y}" x2="${plotR}" y2="${y}" stroke="var(--line)" stroke-width="0.5"/>`;}
+  let axes='',paths='';
+  series.forEach((s,si)=>{const nums=s.vals.filter(v=>v!=null);if(nums.length<2)return;
+    let mn=Math.min(...nums),mx=Math.max(...nums);
+    const minsp=[2,4,100,5][si]||1;                 // don't zoom into noise on a flat metric
+    if(mx-mn<minsp){const mid=(mn+mx)/2;mn=mid-minsp/2;mx=mid+minsp/2;}
+    const prec=si<2?1:0,ax=axDef[si];
+    axes+=`<line x1="${ax.x}" y1="${plotT}" x2="${ax.x}" y2="${plotB}" stroke="${s.color}" stroke-width="1" opacity="0.5"/>`
+       +  `<text x="${ax.x}" y="${plotT-6}" fill="${s.color}" font-size="10" text-anchor="middle">${s.name}</text>`;
+    for(let i=0;i<4;i++){const val=mn+(mx-mn)*i/3,y=plotB-plotH*i/3;
+      const tx=ax.side==='L'?ax.x-4:ax.x+4,anc=ax.side==='L'?'end':'start';
+      axes+=`<line x1="${ax.x-2}" y1="${y}" x2="${ax.x+2}" y2="${y}" stroke="${s.color}" stroke-width="1"/>`
+         +  `<text x="${tx}" y="${y+3.5}" fill="${s.color}" font-size="10" text-anchor="${anc}">${val.toFixed(prec)}</text>`;}
+    let dp='',started=false;
+    for(let i=0;i<t.length;i++){const v=s.vals[i];if(v==null){started=false;continue;}
+      const x=xOf(t[i]),y=plotB-(v-mn)/(mx-mn)*plotH;dp+=(started?'L':'M')+x.toFixed(1)+' '+y.toFixed(1)+' ';started=true;}
+    paths+=`<path d="${dp}" fill="none" stroke="${s.color}" stroke-width="1.7" stroke-linejoin="round"/>`;});
+  const xlab=`<text x="${plotL}" y="${H-6}" fill="var(--mut)" font-size="10">${CH_HM(tmin)}</text><text x="${plotR}" y="${H-6}" fill="var(--mut)" font-size="10" text-anchor="end">${CH_HM(tmax)}</text>`;
+  const cursor=`<line class="cx" x1="0" x2="0" y1="${plotT}" y2="${plotB}" stroke="var(--fg)" stroke-width="0.7" opacity="0"/>`
+    + series.map(s=>`<circle class="cd" r="3.2" fill="${s.color}" stroke="var(--bg)" stroke-width="1" opacity="0"/>`).join('');
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;min-width:660px;height:auto;display:block">${grid}${axes}${paths}${cursor}${xlab}</svg>`;}
+const CH_SERIES=[['temp','Temp','°C','#ff8a5c'],['hum','Humidity','%','#4ea1ff'],['co2','CO₂','ppm','#37d67a'],['pm25','PM2.5','µg/m³','#c98cff']];
+function renderCharts(){
+  const air=st.devices.filter(isAir),box=$('#charts');
+  if(!air.length){box.innerHTML='<div class="empty">No air-quality sensors paired.</div>';return;}
+  box.innerHTML=air.map(d=>{const h=chartHist[d.slot];
+    if(!h||h.t.length<2)return `<div class="sec"><h3>#${d.slot} ${esc(d.label||d.name||'?')}</h3><div class="empty">collecting samples…</div></div>`;
+    const series=CH_SERIES.map(s=>({name:s[1],unit:s[2],color:s[3],vals:h[s[0]]}));
+    return `<div class="sec" data-slot="${d.slot}"><div class="row" style="justify-content:space-between">
+      <h3>#${d.slot} ${esc(d.label||d.name||'?')}</h3><span class="sub">${h.t.length} pts · ${chSpan(h.t)}</span></div>
+      <div class="chartwrap" style="position:relative">${svgChart(h.t,series)}<div class="ctip"></div></div>
+      <div class="legend">${series.map(s=>{const v=lastNum(s.vals);return `<span class="lg"><i style="background:${s.color}"></i>${s.name} <b>${v==null?'—':fmt(v)}</b>${s.unit}</span>`;}).join('')}</div></div>`;
+  }).join('');
+  box.querySelectorAll('.sec[data-slot]').forEach(card=>attachHover(card,+card.dataset.slot));
+}
+/* Cursor crosshair + tooltip: nearest sample by time, values + time at that x. */
+function attachHover(card,slot){
+  const CW=720,pL=100,pR=620,pT=18,pB=224,pH=pB-pT;   // must match svgChart
+  const wrap=card.querySelector('.chartwrap'),svg=wrap.querySelector('svg'),
+        cx=svg.querySelector('.cx'),dots=[...svg.querySelectorAll('.cd')],tip=wrap.querySelector('.ctip');
+  const move=e=>{
+    const h=chartHist[slot]; if(!h||h.t.length<2)return;
+    chartsHover=true;
+    const r=svg.getBoundingClientRect(); const vbX=(e.clientX-r.left)/r.width*CW;
+    const tmin=h.t[0],tmax=h.t[h.t.length-1]===tmin?tmin+1:h.t[h.t.length-1],tsp=tmax-tmin;
+    let frac=(vbX-pL)/(pR-pL); frac=Math.max(0,Math.min(1,frac));
+    const tt=tmin+frac*tsp; let bi=0,bd=1e18;
+    for(let i=0;i<h.t.length;i++){const dd=Math.abs(h.t[i]-tt);if(dd<bd){bd=dd;bi=i;}}
+    const px=pL+(h.t[bi]-tmin)/tsp*(pR-pL);
+    cx.setAttribute('x1',px);cx.setAttribute('x2',px);cx.setAttribute('opacity','0.6');
+    let rows='';
+    CH_SERIES.forEach((s,si)=>{const arr=h[s[0]],v=arr[bi],nums=arr.filter(x=>x!=null);
+      if(!nums.length||v==null){dots[si].setAttribute('opacity','0');rows+=`<span class="lg"><i style="background:${s[3]}"></i>${s[1]} <b>—</b></span>`;return;}
+      let mn=Math.min(...nums),mx=Math.max(...nums),msp=[2,4,100,5][si];
+      if(mx-mn<msp){const md=(mn+mx)/2;mn=md-msp/2;mx=md+msp/2;}
+      const y=pB-(v-mn)/(mx-mn)*pH; dots[si].setAttribute('cx',px);dots[si].setAttribute('cy',y);dots[si].setAttribute('opacity','1');
+      rows+=`<span class="lg"><i style="background:${s[3]}"></i>${s[1]} <b>${fmt(v)}</b>${s[2]}</span>`;});
+    tip.innerHTML=`<div class="tt">${CH_HM(h.t[bi])}</div>${rows}`;
+    tip.style.opacity='1';
+    const wr=wrap.getBoundingClientRect(),tw=tip.offsetWidth||140;
+    let lx=e.clientX-wr.left+wrap.scrollLeft+12; if(lx+tw>wrap.scrollLeft+wrap.clientWidth-4)lx=e.clientX-wr.left+wrap.scrollLeft-tw-12;
+    tip.style.left=Math.max(2,lx)+'px'; tip.style.top=Math.max(2,e.clientY-wr.top+12)+'px';
+  };
+  const leave=()=>{chartsHover=false;cx.setAttribute('opacity','0');dots.forEach(d=>d.setAttribute('opacity','0'));tip.style.opacity='0';if(st.tab==='charts')renderCharts();};
+  wrap.addEventListener('pointermove',move);
+  wrap.addEventListener('pointerleave',leave);
+}
+
+/* ---------- Automation ---------- */
+async function loadAuto(){
+  if(!document.querySelector('#scheds .ws-day'))$('#scheds').innerHTML='<div class="loading"><span class="spin"></span> Loading schedule…</div>';
+  const r=await req({cmd:'schedule'});
+  if(!r.ok){$('#scheds').innerHTML='<div class="loading"><span class="spin"></span> Hub busy (syncing time) — retrying…</div>';
+    if(st.tab==='auto')setTimeout(loadAuto,2500);return;}
+  const l=await req({cmd:'logic_list'});const b=await req({cmd:'bindings'});
+  renderLogic(l.ok?l.result:[]);renderScheds(r.result);renderCal(r.result);renderBind(b.ok?b.result:[]);}
+let curLogic=[];
+function renderLogic(rules){
+  curLogic=rules||[];
+  $('#logic').innerHTML=(rules&&rules.length)?rules.map(r=>`<div class="item">
+    <span class="dot ${r.state?'up':''}"></span><span class="g mono">${esc(r.text)}</span>
+    <span class="row" style="margin-left:auto;gap:6px">
+    <button class="sm ghost" onclick="editLogic(${r.idx})">Edit</button>
+    <button class="sm danger" onclick="act({cmd:'logic_rm',idx:${r.idx}},'Deleted').then(loadAuto)">Delete</button></span></div>`).join('')
+    :'<div class="empty">No logic rules.</div>';}
+async function editLogic(idx){
+  const r=curLogic.find(x=>x.idx===idx); if(!r){loadAuto();return;}
+  const expr=await logicDialog(r.text);
+  if(expr===null)return;
+  if(!expr.trim()){toast('Empty rule',true);return;}
+  const res=await req({cmd:'logic_add',expr:expr.trim()});   // add first (validates); drop the old only if it took
+  if(res&&res.ok){await req({cmd:'logic_rm',idx});toast('Rule updated');}
+  else toast('Error: '+((res&&res.error)||'invalid rule'),true);
+  loadAuto();}
+const LOGIC_EX=[
+  ['temp #1 > 28 on #4','Turn #4 ON while sensor #1 is above 28 °C, OFF again when it drops.'],
+  ['schedule 1 on #4','Follow Scheduler 1 — #4 ON during its weekly windows, OFF outside them.'],
+  ['not schedule 2 on #6','ON only OUTSIDE Scheduler 2 (e.g. an after-hours device).'],
+  ['temp #1 > 28 and schedule 1 on #5','ON only when it is hot AND inside Scheduler 1.'],
+  ['calendar off #4','Force #4 OFF on public-holiday days (the shared holiday calendar).'],
+  ['schedule 1 and not calendar and temp #1 > 24 on #4','During Scheduler 1, on non-holidays, if it is warm.'],
+  ['calendar and ( temp #2 > 25 or co2 #2 > 1000 ) on #4','On holidays, run #4 if warm OR CO₂ is high — one group level.'],
+  ['temp avg #1 #2 #3 > 26 on #4','Average temperature across sensors #1–#3 above 26 °C.'],
+  ['co2 max #1 #2 > 1200 on #5','Either CO₂ sensor above 1200 ppm (max of the sources).'],
+  ['temp #1 > 28 hyst 1 on #4','ON at 28 °C, OFF at 27 °C — a 1° deadband to stop on/off chatter.'],
+  ['schedule 1 on #4 #5','One rule drives two devices at once (#4 and #5).'],
+  ['co2 #2 > 2000 toggle #4 oneshot','Pulse #4 once when CO₂ crosses 2000 ppm (fires once, not tracking).'],
+];
+function logicDialog(pre){return new Promise(res=>{
+  const w=document.createElement('div');w.className='modal-bg';
+  w.innerHTML=`<div class="modal lgm"><h3>${pre?'Edit':'Add'} logic rule</h3>
+    <label>Expression<input id="lx" autocomplete="off" spellcheck="false" placeholder="temp #1 > 28 and schedule 1 on #5"></label>
+    <div class="lg-ref"><div class="hd">Grammar</div>
+      <div><span class="mono">&lt;term&gt; [and|or|xor &lt;term&gt;]… &lt;on|off|toggle&gt; #dev [#dev…] [oneshot]</span></div>
+      <div>• term = a condition, or <span class="mono">( cond&nbsp;[and|or|xor&nbsp;cond]… )</span> — one group level</div>
+      <div>• cond = <span class="mono">[not] &lt;sensor&gt; [avg|min|max] #src… &lt;op&gt; value [hyst v]</span></div>
+      <div>&nbsp;&nbsp;&nbsp;&nbsp;| <span class="mono">[not] schedule 1-4</span> — that scheduler is active now</div>
+      <div>&nbsp;&nbsp;&nbsp;&nbsp;| <span class="mono">[not] calendar</span> — today is on the holiday calendar</div>
+      <div class="sub">sensors <span class="mono">temp humidity co2 pm25</span> · ops <span class="mono">&gt; &gt;= &lt; &lt;=</span> · tracks the condition unless you add <span class="mono">oneshot</span></div></div>
+    <div class="lg-ex"><div class="hd">Examples — click one to use it</div>
+      <div class="lg-list">${LOGIC_EX.map(([e,d],i)=>`<button type="button" class="lg-eg" data-i="${i}"><span class="mono">${esc(e)}</span><span class="lg-egd">${esc(d)}</span></button>`).join('')}</div></div>
+    <div class="modal-row"><button class="ghost" id="lC">Cancel</button><button class="prim" id="lO">${pre?'Save':'Add rule'}</button></div></div>`;
+  document.body.appendChild(w);
+  const inp=w.querySelector('#lx');
+  if(pre)inp.value=pre;
+  const done=v=>{w.remove();res(v);};
+  w.querySelectorAll('.lg-eg').forEach(b=>b.onclick=()=>{inp.value=LOGIC_EX[+b.dataset.i][0];inp.focus();});
+  w.querySelector('#lC').onclick=()=>done(null);
+  w.querySelector('#lO').onclick=()=>done(inp.value);
+  w.onclick=e=>{if(e.target===w)done(null);};
+  w.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target===inp)done(inp.value);if(e.key==='Escape')done(null);});
+  setTimeout(()=>inp.focus(),40);
+});}
+async function addLogic(){const expr=await logicDialog();
+  if(expr&&expr.trim()){await act({cmd:'logic_add',expr:expr.trim()},'Rule added');loadAuto();}}
+/* ---- weekly-schedule grid (BAS-style) ---- */
+const WS_DAYS=[{n:'sun',l:'Sun',i:6},{n:'mon',l:'Mon',i:0},{n:'tue',l:'Tue',i:1},{n:'wed',l:'Wed',i:2},{n:'thu',l:'Thu',i:3},{n:'fri',l:'Fri',i:4},{n:'sat',l:'Sat',i:5},{n:'holiday',l:'Hol',i:7}];
+const WS_HOURS=[0,3,6,9,12,15,18,21,24];
+const wsHourLbl=h=>h===0||h===24?'12 AM':h===12?'12 PM':h<12?h+' AM':(h-12)+' PM';
+let schedSel=1,schedData=null,selEvent=null;const wsDaysSel=new Set();
+function renderWeekly(s,n){
+  const times=WS_HOURS.map(h=>`<div class="ws-tlabel" style="top:${h/24*100}%">${wsHourLbl(h)}</div>`).join('');
+  const cols=WS_DAYS.map(d=>{const evs=s.days[d.i]||[];
+    const blocks=evs.map((e,ei)=>{const top=e.s/1440*100,ht=(e.e+1-e.s)/1440*100;
+      const sel=selEvent&&selEvent.day===d.n&&selEvent.s===e.s&&selEvent.e===e.e;
+      return `<div class="ws-block${sel?' sel':''}" data-idx="${ei}" data-s="${e.s}" data-e="${e.e}" style="top:${top}%;height:${ht}%" title="${d.l} ${hhmm(e.s)}–${hhmm(e.e)} on (off ${hhmm(e.e+1===1440?0:e.e+1)}) · click to select, double-click to delete, drag to move/resize">On</div>`;}).join('');
+    return `<div class="ws-col ws-day"><div class="ws-head ${d.n==='holiday'?'hol':''}">${d.l}</div><div class="ws-track">${blocks}</div></div>`;}).join('');
+  return `<div class="wsched"><div class="ws-col ws-times"><div class="ws-head"></div><div class="ws-track">${times}</div></div>${cols}</div>`;
+}
+function renderScheds(sc){
+  const box=$('#scheds');if(!sc||!sc.schedulers){box.textContent='(unavailable)';return;}
+  schedData=sc;const s=sc.schedulers[schedSel-1];
+  box.innerHTML=`<div class="ws-tabs">${sc.schedulers.map((x,i)=>`<button class="ws-tab ${i+1===schedSel?'sel':''} ${x.used?'':'un'}" onclick="selSched(${i+1})">Scheduler ${i+1}</button>`).join('')}
+      <label class="sub" style="margin-left:auto"><input type="checkbox" ${s.cal?'checked':''} onchange="act({cmd:'sched_cal',n:${schedSel},on:this.checked},'Calendar '+(this.checked?'on':'off')).then(loadAuto)"> use Holiday column on public holidays</label></div>
+    <div class="scroll">${renderWeekly(s,schedSel)}</div>
+    <div id="ws-editor" class="ws-editor"></div>`;
+  box.querySelectorAll('.ws-day').forEach((col,ci)=>attachDayDrag(col,WS_DAYS[ci]));
+  renderEditor();
+}
+function renderEditor(){
+  const box=$('#ws-editor');if(!box)return;
+  if(selEvent){const d=WS_DAYS.find(x=>x.n===selEvent.day);
+    box.innerHTML=`<div class="row" style="margin-bottom:8px;align-items:center"><b>Editing ${d.l}</b>
+        <span class="mono">${hhmm(selEvent.s)}–${hhmm(selEvent.e)} on · off ${hhmm(selEvent.e+1===1440?0:selEvent.e+1)}</span>
+        <button class="sm ghost" onclick="deselectEvent()">＋ New event</button></div>
+      <div class="row">
+        <label class="sub">Event Start <input type="time" id="ws_start" value="${hhmm(selEvent.s)}"></label>
+        <label class="sub">Event Finish (last on-min) <input type="time" id="ws_finish" value="${hhmm(selEvent.e)}"></label>
+        <button class="prim sm" onclick="wsApply()">Update event</button>
+        <button class="sm" onclick="loadAuto()">Refresh</button></div>
+      <div class="hint">Start &amp; Finish are the first and <b>last on-minute</b> (output turns off the minute after Finish, so 23:00–23:59 = off at midnight). Change them and Update. Double-click the block to delete it, or ＋ New event to add another.</div>`;
+  } else {
+    box.innerHTML=`<div class="ws-daysel">${WS_DAYS.map(d=>`<button class="ws-dchip ${wsDaysSel.has(d.n)?'sel':''}" data-d="${d.n}" onclick="toggleWsDay('${d.n}')">${d.l}</button>`).join('')}</div>
+      <div class="row">
+        <label class="sub">Event Start <input type="time" id="ws_start" value="08:00"></label>
+        <label class="sub">Event Finish (last on-min) <input type="time" id="ws_finish" value="16:59"></label>
+        <button class="prim sm" onclick="wsApply()">Add</button>
+        <button class="sm" onclick="loadAuto()">Refresh</button></div>
+      <div class="hint">Drag on a day to paint a window, or tick day(s) + set times then Add. Finish is the <b>last on-minute</b> (output turns off the minute after). Single-click a block to select &amp; edit it; double-click to delete. Drag a block to move it, its edges to resize. ≤4/day. Logic tests this as <span class="mono">schedule ${schedSel} on</span>.</div>`;
+  }
+}
+function selectEvent(day,s,e,el){selEvent={day,s,e};
+  document.querySelectorAll('#scheds .ws-block.sel').forEach(b=>b.classList.remove('sel'));if(el)el.classList.add('sel');renderEditor();}
+function deselectEvent(){selEvent=null;document.querySelectorAll('#scheds .ws-block.sel').forEach(b=>b.classList.remove('sel'));renderEditor();}
+async function deleteEvent(day,s,e){selEvent=null;const dd=WS_DAYS.find(x=>x.n===day).i,evs=schedData.schedulers[schedSel-1].days[dd]||[],idx=evs.findIndex(x=>x.s===s&&x.e===e);
+  if(idx<0){loadAuto();return;}await act({cmd:'sched_rm',n:schedSel,day,idx},'Window deleted');loadAuto();}
+function selSched(i){schedSel=i;selEvent=null;renderScheds(schedData);}
+function attachDayDrag(col,d){
+  const track=col.querySelector('.ws-track'); if(!track)return;
+  const SNAP=15,yMin=cy=>{const r=track.getBoundingClientRect();let m=Math.round((cy-r.top)/r.height*1440/SNAP)*SNAP;return Math.max(0,Math.min(1440,m));};
+  track.addEventListener('dblclick',e=>{const bel=e.target.closest('.ws-block');if(bel)deleteEvent(d.n,+bel.dataset.s,+bel.dataset.e);});
+  track.addEventListener('pointerdown',e=>{
+    if(e.button!==0||!schedData)return;
+    const evs=(schedData.schedulers[schedSel-1].days[d.i])||[],bel=e.target.closest('.ws-block'),down=yMin(e.clientY);
+    let mode,idx=-1,startS,startE,edge='';
+    if(bel){idx=+bel.dataset.idx;startS=evs[idx].s;startE=evs[idx].e;const br=bel.getBoundingClientRect();
+      if(br.height>=16&&e.clientY-br.top<7){mode='resize';edge='t';}
+      else if(br.height>=16&&br.bottom-e.clientY<7){mode='resize';edge='b';}
+      else mode='move';}
+    else{mode='create';startS=down;startE=down;}
+    let curS=startS,curE=startE,prev,dragged=false;
+    if(mode==='create'){prev=document.createElement('div');prev.className='ws-block ws-preview';prev.textContent='On';track.appendChild(prev);}else prev=bel;
+    const tip=document.createElement('div');tip.className='ws-dragtip';tip.style.display='none';track.appendChild(tip);
+    const paint=()=>{prev.style.top=(curS/1440*100)+'%';prev.style.height=Math.max((curE+1-curS)/1440*100,0.8)+'%';
+      tip.textContent=`${hhmm(curS)}–${hhmm(curE)}`;tip.style.top=(curS/1440*100)+'%';};
+    if(mode==='create')paint();
+    const move=ev=>{ev.preventDefault();dragged=true;tip.style.display='block';const m=yMin(ev.clientY);
+      if(mode==='create'){curS=Math.min(down,m);curE=Math.max(down,m)-1;if(curE<curS)curE=curS;}
+      else if(mode==='move'){const dur=startE-startS,delta=m-down;curS=Math.max(0,Math.min(1439-dur,startS+delta));curE=curS+dur;}
+      else{if(edge==='t')curS=Math.max(0,Math.min(m,startE));else curE=Math.min(1439,Math.max(m-1,startS));}
+      paint();};
+    const up=async()=>{
+      window.removeEventListener('pointermove',move);window.removeEventListener('pointerup',up);tip.remove();
+      const changed=(curS!==startS||curE!==startE);
+      if(mode==='create'){if(prev)prev.remove();if(!dragged||curE-curS<5){deselectEvent();return;}
+        selEvent={day:d.n,s:curS,e:curE};
+        const r=await req({cmd:'sched_add',n:schedSel,day:d.n,start:hhmm(curS),end:hhmm(curE)});
+        if(!r.ok){toast('Error: '+(r.error||'overlap/full'),true);selEvent=null;}loadAuto();return;}
+      if(!changed){selectEvent(d.n,startS,startE,bel);return;}   // single click = select
+      selEvent={day:d.n,s:curS,e:curE};
+      await req({cmd:'sched_rm',n:schedSel,day:d.n,idx});
+      const ra=await req({cmd:'sched_add',n:schedSel,day:d.n,start:hhmm(curS),end:hhmm(curE)});
+      if(!ra.ok){toast('Error: '+(ra.error||'overlap'),true);await req({cmd:'sched_add',n:schedSel,day:d.n,start:hhmm(startS),end:hhmm(startE)});selEvent={day:d.n,s:startS,e:startE};}
+      loadAuto();};
+    window.addEventListener('pointermove',move);window.addEventListener('pointerup',up);
+  });
+}
+function toggleWsDay(n){wsDaysSel.has(n)?wsDaysSel.delete(n):wsDaysSel.add(n);const b=document.querySelector(`.ws-dchip[data-d="${n}"]`);if(b)b.classList.toggle('sel');}
+async function wsApply(){
+  const sv=$('#ws_start').value,fv=$('#ws_finish').value,sm=parseHM(sv),fm=parseHM(fv);
+  if(sm==null||fm==null){toast('Enter valid start/finish times',true);return;}
+  if(fm<sm){toast('Finish cannot be before Start',true);return;}
+  if(selEvent){   // UPDATE the selected event on its own day
+    const dd=WS_DAYS.find(x=>x.n===selEvent.day).i,evs=schedData.schedulers[schedSel-1].days[dd]||[];
+    const idx=evs.findIndex(e=>e.s===selEvent.s&&e.e===selEvent.e);
+    if(idx<0){toast('That event no longer exists',true);selEvent=null;loadAuto();return;}
+    if(sm===selEvent.s&&fm===selEvent.e){toast('No change');return;}
+    await req({cmd:'sched_rm',n:schedSel,day:selEvent.day,idx});
+    const ra=await req({cmd:'sched_add',n:schedSel,day:selEvent.day,start:sv,end:fv});
+    if(ra.ok){selEvent={day:selEvent.day,s:sm,e:fm};toast('Event updated');}
+    else{toast('Error: '+(ra.error||'overlap'),true);await req({cmd:'sched_add',n:schedSel,day:selEvent.day,start:hhmm(selEvent.s),end:hhmm(selEvent.e)});}
+    loadAuto();return;
+  }
+  if(!wsDaysSel.size){toast('Tick day(s), or click a block to edit it',true);return;}
+  let done=0,err='';
+  for(const name of wsDaysSel){const r=await req({cmd:'sched_add',n:schedSel,day:name,start:sv,end:fv});if(r.ok)done++;else err=r.error||'add failed';}
+  toast(err?('Error: '+err):`Added window to ${done} day(s)`,!!err);loadAuto();
+}
+/* ---- month calendar (Niagara-style): click a day to mark a recurring holiday ---- */
+const MONTHS=['January','February','March','April','May','June','July','August','September','October','November','December'];
+let calMonth=new Date().getMonth(),calYear=new Date().getFullYear(),calData=[];
+const calMatch=(day,mon)=>calData.some(c=>(c.d===0||c.d===day)&&(c.m===0||c.m===mon));
+const calSpecIdx=(day,mon)=>calData.findIndex(c=>c.d===day&&c.m===mon);
+const pad2=n=>String(n).padStart(2,'0');
+function renderCal(sc){
+  const box=$('#calendar');if(sc)calData=sc.calendar||[];
+  const startDow=new Date(calYear,calMonth,1).getDay(),dim=new Date(calYear,calMonth+1,0).getDate(),mon=calMonth+1;
+  const dow=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d=>`<div class="cal-dow">${d}</div>`).join('');
+  let cells='';for(let i=0;i<startDow;i++)cells+=`<div class="cal-cell cal-empty"></div>`;
+  for(let day=1;day<=dim;day++){const hol=calMatch(day,mon),spec=calSpecIdx(day,mon)>=0;
+    cells+=`<div class="cal-cell${hol?' cal-hol':''}" title="${pad2(day)}/${pad2(mon)}${hol&&!spec?' (from a pattern)':''}" onclick="calToggle(${day})">${day}${hol&&!spec?'<i class="cal-wild"></i>':''}</div>`;}
+  const chips=calData.length?calData.map((c,i)=>`<span class="chip">${c.d?pad2(c.d):'**'}/${c.m?pad2(c.m):'**'}<button class="ghost" onclick="act({cmd:'calendar_rm',idx:${i}},'Removed').then(loadAuto)">×</button></span>`).join(''):'<span class="sub">no holidays</span>';
+  box.innerHTML=`<div class="cal-wrap">
+    <div class="cal-nav"><button class="sm" onclick="calNav(-1)">◀</button><b>${MONTHS[calMonth]} ${calYear}</b><button class="sm" onclick="calNav(1)">▶</button></div>
+    <div class="cal-grid">${dow}${cells}</div></div>
+    <div class="cal-list"><span class="sub">Recurring holidays:</span>${chips}
+      <button class="sm ghost" onclick="addCal()">+ pattern</button></div>`;
+}
+function calNav(d){calMonth+=d;if(calMonth<0){calMonth=11;calYear--;}else if(calMonth>11){calMonth=0;calYear++;}renderCal();}
+async function calToggle(day){const mon=calMonth+1,idx=calSpecIdx(day,mon);
+  if(idx>=0){await act({cmd:'calendar_rm',idx},`Removed ${pad2(day)}/${pad2(mon)}`);}
+  else if(calMatch(day,mon)){toast('Covered by a pattern — remove it from the list',true);return;}
+  else{await act({cmd:'calendar_add',date:`${pad2(day)}/${pad2(mon)}`},`Marked ${pad2(day)}/${pad2(mon)} holiday`);}
+  loadAuto();}
+async function addCal(){const v=await dialog('Add a recurring pattern',[{label:'DD/MM, ** = any (e.g. **/07, 01/**)',placeholder:'**/07'}]);
+  if(v&&v[0].trim()){await act({cmd:'calendar_add',date:v[0].trim()},'Pattern added');loadAuto();}}
+let curBinds=[];
+function renderBind(bs){
+  curBinds=bs||[];
+  $('#bindings').innerHTML=(bs&&bs.length)?bs.map(b=>`<div class="item">
+    <span class="g mono">#${b.src} ep${b.src_ep} <b>${esc(b.press||'press')}</b> → #${b.dst} ep${b.dst_ep} : ${esc(b.action)}</span>
+    <span class="row" style="margin-left:auto;gap:6px">
+    <button class="sm ghost" onclick="editBind(${b.idx})">Edit</button>
+    <button class="sm danger" onclick="act({cmd:'unbind',idx:${b.idx}},'Unbound').then(loadAuto)">Delete</button></span></div>`).join('')
+    :'<div class="empty">No bindings.</div>';}
+async function editBind(idx){
+  const b=curBinds.find(x=>x.idx===idx); if(!b){loadAuto();return;}
+  const r=await req({cmd:'bindable'});
+  const devs=(r.ok&&Array.isArray(r.result))?r.result:[];
+  const srcs=devs.filter(d=>d.eps.some(e=>e.src)); const tgts=devs.filter(d=>d.eps.some(e=>e.target));
+  const v=await bindDialog(srcs,tgts,b);
+  if(!v)return;
+  await req({cmd:'unbind',idx:b.idx});   // remove the old rule, then add the edited one
+  await act({cmd:'bind',src:v.src,src_ep:v.src_ep,dst:v.dst,dst_ep:v.dst_ep,action:v.action,press:v.press},'Binding updated');
+  loadAuto();}
+async function addBind(){
+  const r=await req({cmd:'bindable'});
+  const devs=(r.ok&&Array.isArray(r.result))?r.result:[];
+  const srcs=devs.filter(d=>d.eps.some(e=>e.src));
+  const tgts=devs.filter(d=>d.eps.some(e=>e.target));
+  if(!srcs.length||!tgts.length){toast('Need a source (button/binding endpoint) and an On/Off target — scan devices first',true);return;}
+  const v=await bindDialog(srcs,tgts);
+  if(!v)return;await act({cmd:'bind',src:v.src,src_ep:v.src_ep,dst:v.dst,dst_ep:v.dst_ep,action:v.action,press:v.press},'Binding added');loadAuto();}
+function bindDialog(srcs,tgts,pre){return new Promise(res=>{
+  const w=document.createElement('div');w.className='modal-bg';
+  const opt=arr=>arr.map(d=>`<option value="${d.slot}">#${d.slot} — ${esc(d.name)}</option>`).join('');
+  const srcLbl=e=>e.src==='switch'?'button / switch':'binding source';
+  w.innerHTML=`<div class="modal"><h3>${pre?'Edit':'Add'} binding</h3>
+    <div class="hint">A source (a button, or a binding-capable endpoint) drives a target device's On/Off output.</div>
+    <label>Source device<select id="bsd">${opt(srcs)}</select></label>
+    <label>Source endpoint<select id="bse"></select></label>
+    <label>Target device<select id="btd">${opt(tgts)}</select></label>
+    <label>Target endpoint<select id="bte"></select></label>
+    <label>Action<select id="bac"><option value="toggle">toggle</option><option value="on">on</option><option value="off">off</option></select></label>
+    <label>Press type<select id="bpr"><option value="single">single press</option><option value="double">double press</option><option value="long">long press</option></select></label>
+    <div class="hint">Press type applies to button / switch sources (single = one press, double = two, long = press &amp; hold).</div>
+    <div class="modal-row"><button class="ghost" id="bC">Cancel</button><button class="prim" id="bO">${pre?'Save':'Add binding'}</button></div></div>`;
+  document.body.appendChild(w);
+  const g=id=>w.querySelector(id);
+  const fillSrc=()=>{const d=srcs.find(x=>x.slot==+g('#bsd').value);g('#bse').innerHTML=(d?d.eps.filter(e=>e.src):[]).map(e=>`<option value="${e.ep}">ep${e.ep} — ${srcLbl(e)}</option>`).join('');};
+  const fillTgt=()=>{const d=tgts.find(x=>x.slot==+g('#btd').value);g('#bte').innerHTML=(d?d.eps.filter(e=>e.target):[]).map(e=>`<option value="${e.ep}">ep${e.ep} — On/Off output</option>`).join('');};
+  g('#bsd').onchange=fillSrc;g('#btd').onchange=fillTgt;fillSrc();fillTgt();
+  if(pre){                                   // editing: pre-select the existing values
+    g('#bsd').value=pre.src; fillSrc(); g('#bse').value=pre.src_ep;
+    g('#btd').value=pre.dst; fillTgt(); g('#bte').value=pre.dst_ep;
+    g('#bac').value=pre.action;
+    if(['single','double','long'].includes(pre.press)) g('#bpr').value=pre.press;
+  }
+  const done=v=>{w.remove();res(v);};
+  g('#bC').onclick=()=>done(null);
+  g('#bO').onclick=()=>{if(!g('#bse').value||!g('#bte').value){toast('Pick source and target endpoints',true);return;}
+    done({src:+g('#bsd').value,src_ep:+g('#bse').value,dst:+g('#btd').value,dst_ep:+g('#bte').value,action:g('#bac').value,press:g('#bpr').value});};
+  w.onclick=e=>{if(e.target===w)done(null);};
+  w.addEventListener('keydown',e=>{if(e.key==='Escape')done(null);});
+  setTimeout(()=>g('#bsd')?.focus(),40);
+});}
+
+/* ---------- Commissioning ---------- */
+async function bleScan(){const b=$('#scanBtn');b.disabled=true;b.textContent='scanning…';$('#scanRes').innerHTML='<div class="empty">scanning…</div>';
+  const r=await req({cmd:'blescan',secs:8});b.disabled=false;b.textContent='BLE scan (8s)';
+  const list=(r.ok&&r.result&&(r.result.devices||r.result.found))||[];
+  $('#scanRes').innerHTML=(list.length)?list.map(d=>`<div class="item"><span class="g mono">
+    disc ${d.discriminator??d.disc??'?'} · vid ${(d.vid||0).toString(16)} pid ${(d.pid||0).toString(16)}</span>
+    <span class="sub">enter full payload to pair →</span></div>`).join('')
+    :'<div class="empty">No commissionable devices found (a device must be in pairing mode).</div>';
+  if(!r.ok)toast('Scan failed: '+(r.error||''),true);}
+async function pairDevice(){const v=await dialog('Pair by setup payload',
+  [{label:'Setup payload (11-digit / QR numeric)',placeholder:'22089934501'}]);
+  if(v&&v[0].trim())act({cmd:'pair',payload:v[0].trim()},'Pairing — hub rebooting (~1–4 min)');}
+
+/* ---------- Console ---------- */
+async function loadConsole(){
+  if(!$('#heap').innerHTML.trim())$('#heap').innerHTML='<div class="loading"><span class="spin"></span> Loading…</div>';
+  const r=await req({cmd:'heap'});const h=r.ok?r.result:null;
+  $('#heap').innerHTML=h?`<div class="kv">
+    <b>Free</b><div>${h.free} B <div class="gauge"><i style="width:${Math.min(100,h.free/300*100||0).toFixed(0)}%"></i></div></div>
+    <b>Min ever</b><div>${h.min_ever} B</div><b>Largest block</b><div>${h.largest} B</div></div>`
+    :'<div class="loading">Hub busy — try Refresh in a moment</div>';}
+function nowStamp(){const d=new Date(),p=n=>String(n).padStart(2,'0');
+  return String(d.getFullYear()).slice(2)+p(d.getMonth()+1)+p(d.getDate())+'-'+p(d.getHours())+p(d.getMinutes());}
+async function doBackup(){const r=await req({cmd:'backup'});
+  if(!r.ok){toast('Backup failed'+(r.error?': '+r.error:''),true);return;}
+  const name='MatterBackup'+nowStamp()+'.json';
+  const blob=new Blob([JSON.stringify(r.result,null,2)],{type:'application/json'});
+  const url=URL.createObjectURL(blob),a=document.createElement('a');
+  a.href=url;a.download=name;document.body.appendChild(a);a.click();
+  setTimeout(()=>{URL.revokeObjectURL(url);a.remove();},1500);
+  toast('Saved '+name);}
+function doRestore(){const inp=document.createElement('input');inp.type='file';inp.accept='.json,application/json';
+  inp.onchange=async()=>{const f=inp.files[0];if(!f)return;let data;
+    try{data=JSON.parse(await f.text());}catch(e){toast('That file is not valid JSON',true);return;}
+    if(!data||typeof data!=='object'){toast('That file is not a valid backup',true);return;}
+    restoreDialog(f.name,async wipe=>{const r=await req({cmd:'restore',backup:data,wipe});
+      if(r.ok)toast('Restoring — the hub is rebooting (~1–4 min) and will reconnect automatically.');
+      else toast('Restore failed'+(r.error?': '+r.error:''),true);});};
+  inp.click();}
+function restoreDialog(fileName,onConfirm){const w=document.createElement('div');w.className='modal-bg';
+  w.innerHTML=`<div class="modal"><h3>Restore backup</h3>
+    <div class="hint">From <b>${esc(fileName)}</b>. The hub reboots and re-applies its saved devices, bindings, logic and schedules — paired devices may need to be re-commissioned. This can take a few minutes.</div>
+    <label style="display:flex;gap:8px;align-items:center;color:var(--fg);margin:6px 0 12px"><input type="checkbox" id="rw"> Factory-wipe first (erase everything, then restore exactly)</label>
+    <div class="modal-row"><button class="ghost" id="rC">Cancel</button><button class="prim" id="rO">Restore</button></div></div>`;
+  document.body.appendChild(w);
+  const done=v=>{w.remove();if(v!==null)onConfirm(v);};
+  w.querySelector('#rC').onclick=()=>done(null);
+  w.querySelector('#rO').onclick=()=>done(w.querySelector('#rw').checked);
+  w.onclick=e=>{if(e.target===w)done(null);};
+  w.addEventListener('keydown',e=>{if(e.key==='Escape')done(null);});}
+async function showBackup(){const r=await req({cmd:'backup'});
+  if(r.ok)dialog('Backup JSON (copy to save)',[{label:'config',value:JSON.stringify(r.result)}]);else toast('Backup failed',true);}
+
+/* ---------- Config ---------- */
+function tzMinToStr(m){if(m==null)return'+08:00';const s=m<0?'-':'+',a=Math.abs(m);return s+String(a/60|0).padStart(2,'0')+':'+String(a%60).padStart(2,'0');}
+function tzStrToMin(s){const m=/^([+-]?)(\d{1,2}):?(\d{2})?$/.exec((s||'').trim());if(!m)return null;const sg=m[1]==='-'?-1:1;return sg*((+m[2])*60+(+(m[3]||0)));}
+async function loadConfig(){
+  const r=await req({cmd:'cfg_get'});const c=r.ok?r.result:{};
+  $('#cfgStatus').innerHTML=`<b>Portal AP</b><div><b style="color:var(--acc)">${esc(st.link.ap||c.ap_ssid||'MatterGateway')}</b> → http://192.168.4.1/ <span class="sub">(connect any device here)</span></div>
+    <b>LAN IP</b><div>${esc(st.link.ip||'—')} <span class="sub">(when joined to Wi-Fi)</span></div>
+    <b>mDNS</b><div>${esc(c.hostname||'esp32')}.local <span class="sub">(where the network allows mDNS)</span></div>
+    <b>Hub link</b><div>${esc(st.link.c6||'?')}</div><b>Hub clock</b><div id="cfgClock">${esc(hubClockStr()||'not set')}</div>`;
+  $('#c_poll').value=c.poll_s??5;$('#c_tz').value=tzMinToStr(c.tz_min);$('#c_ntp').value=c.ntp||'';$('#c_host').value=c.hostname||'';
+  $('#c_ssid').value=c.sta_ssid||'';$('#c_apssid').value=c.ap_ssid||'';$('#c_spass').value='';$('#c_appass').value='';$('#cfgMsg').textContent='';
+}
+async function saveCfg(){
+  const tz=tzStrToMin($('#c_tz').value);if(tz==null){toast('Bad timezone — use +08:00',true);return;}
+  const b={cmd:'cfg_set',poll_s:+$('#c_poll').value||5,tz_min:tz,ntp:$('#c_ntp').value.trim(),
+    hostname:$('#c_host').value.trim(),sta_ssid:$('#c_ssid').value.trim(),ap_ssid:$('#c_apssid').value.trim()};
+  if($('#c_spass').value)b.sta_pass=$('#c_spass').value;
+  if($('#c_appass').value)b.ap_pass=$('#c_appass').value;
+  const r=await act(b,'Settings saved');
+  await loadConfig();
+  if(r.ok&&r.result&&r.result.reboot)$('#cfgMsg').innerHTML='<span style="color:var(--warn)">Network change saved — reboot to apply.</span>';
+}
+async function rebootS3(){const v=await dialog('Reboot the gateway?',[{label:'Type REBOOT to confirm',placeholder:'REBOOT'}]);
+  if(v&&v[0]==='REBOOT'){act({cmd:'s3_reboot'},'Rebooting…');toast('Gateway rebooting — reconnecting shortly');}}
+
+/* ---------- tabs ---------- */
+function showTab(n){st.tab=n;$$('.tab').forEach(b=>b.classList.toggle('sel',b.dataset.tab===n));
+  $$('.panel').forEach(p=>p.classList.toggle('show',p.id==='tab-'+n));
+  if(n==='devices')renderDevices();else if(n==='charts')loadCharts();else if(n==='auto')loadAuto();else if(n==='console')loadConsole();else if(n==='config')loadConfig();}
+$$('.tab').forEach(b=>b.onclick=()=>showTab(b.dataset.tab));
+connect();
+</script>
+</body>
+</html>

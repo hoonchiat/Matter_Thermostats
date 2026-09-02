@@ -1,0 +1,14 @@
+# Build output
+build/
+sdkconfig
+sdkconfig.old
+
+# Vendored dependencies (large; reproduce via IDF Component Manager +
+# main/idf_component.yml, then apply patches/esp_matter_local.patch)
+managed_components/
+dependencies.lock
+
+# Logs / scratch
+*.log
+*_stdout.txt
+*_stderr.txt

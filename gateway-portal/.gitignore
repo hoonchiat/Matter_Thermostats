@@ -1,0 +1,11 @@
+# ESP-IDF build output + fetched components (regenerated from dependencies.lock)
+build/
+managed_components/
+
+# Generated sdkconfig (from sdkconfig.defaults); keep defaults under version control
+sdkconfig
+sdkconfig.old
+
+# Editor / OS
+*.log
+.vscode/

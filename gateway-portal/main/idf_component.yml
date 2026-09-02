@@ -1,0 +1,9 @@
+# Managed component dependencies (fetched by the IDF component manager on first build).
+# cdc_acm_host and mdns are NOT in the IDF tree in v5.4.4 - they come from the registry.
+dependencies:
+  idf:
+    version: ">=5.4"
+  espressif/usb_host_cdc_acm:
+    version: ">=2.0.0"
+  espressif/mdns:
+    version: ">=1.2.0"

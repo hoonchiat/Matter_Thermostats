@@ -1,0 +1,25 @@
+# ---- Target -------------------------------------------------------------
+CONFIG_IDF_TARGET="esp32s3"
+
+# ---- Flash: N16R8 = 16MB --------------------------------------------------
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="16MB"
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
+# ---- Octal PSRAM (N16R8 = 8MB octal SPIRAM) -------------------------------
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_SPIRAM_SPEED_80M=y
+CONFIG_SPIRAM_USE_MALLOC=y
+# Let Wi-Fi / LWIP buffers land in PSRAM to spare internal RAM
+CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y
+
+# ---- HTTP server: enable native WebSocket support -------------------------
+CONFIG_HTTPD_WS_SUPPORT=y
+
+# ---- Give app_main a comfortable stack (USB host + init) ------------------
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=6144
+
+# ---- Logging --------------------------------------------------------------
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y

@@ -1,0 +1,110 @@
+# Matter controller (no server)
+CONFIG_ESP_MATTER_ENABLE_MATTER_SERVER=n
+CONFIG_ESP_MATTER_CONTROLLER_ENABLE=y
+CONFIG_ESP_MATTER_COMMISSIONER_ENABLE=y
+CONFIG_ENABLE_CHIP_CONTROLLER_BUILD=y
+
+# mbedTLS — required by CHIP crypto (HKDF)
+CONFIG_MBEDTLS_HKDF_C=y
+
+# mbedTLS TLS/DTLS record buffers. Default IN=16384/OUT=4096 reserves ~20 KB
+# per SSL context (the OpenThread border-agent DTLS) — that starves BLE Matter
+# commissioning of PacketBuffers ("pool EMPTY" at ReadCommissioningInfo).
+# Matter/Thread messages are ~1.3 KB, so 3 KB is ample and frees the heap
+# commissioning needs.
+CONFIG_MBEDTLS_SSL_IN_CONTENT_LEN=3072
+CONFIG_MBEDTLS_SSL_OUT_CONTENT_LEN=3072
+# mbedTLS DTLS + ECJPAKE — required by OpenThread secure transport (border agent)
+CONFIG_MBEDTLS_SSL_PROTO_DTLS=y
+CONFIG_MBEDTLS_ECJPAKE_C=y
+CONFIG_MBEDTLS_KEY_EXCHANGE_ECJPAKE=y
+
+# BLE — commissioning transport
+CONFIG_ENABLE_ESP32_BLE_CONTROLLER=y
+CONFIG_BT_ENABLED=y
+CONFIG_BT_NIMBLE_ENABLED=y
+CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_INTERNAL=y
+CONFIG_BT_BLUEDROID_ENABLED=n
+
+# Thread — ALPSTUGA uses Matter over 802.15.4
+CONFIG_OPENTHREAD_ENABLED=y
+CONFIG_OPENTHREAD_FTD=y
+CONFIG_OPENTHREAD_CLI=n
+# SRP server: enabled when BORDER_ROUTER=y (set in ftd-config.h).
+# BORDER_AGENT_ENABLE=y enables otBorderAgentGetId/GetUdpPort (needed by libopenthread_br.a).
+# espressif__mdns in main/CMakeLists REQUIRES satisfies mdns_service_* symbols.
+CONFIG_OPENTHREAD_BORDER_ROUTER=y
+CONFIG_OPENTHREAD_BORDER_AGENT_ENABLE=y
+
+# IPv6
+CONFIG_LWIP_IPV6=y
+CONFIG_LWIP_IPV6_AUTOCONFIG=y
+# BORDER_ROUTER requires at least 12 IPv6 addresses on the LwIP netif
+CONFIG_LWIP_IPV6_NUM_ADDRESSES=12
+
+
+# Flash — ESP32-C6-WROOM-1-N4 has 4 MB flash
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="4MB"
+
+# Partition table — 3 MB factory to fit large Matter+BLE+Thread binary
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
+# FreeRTOS
+CONFIG_FREERTOS_HZ=1000
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=6144
+
+# CHIP task stack — commissioning pipeline (attestation, NOC, crypto) goes deep
+CONFIG_CHIP_TASK_STACK_SIZE=16384
+
+# OpenThread task — 6 KB is sufficient for routing/SRP/CoAP operations
+CONFIG_OPENTHREAD_TASK_SIZE=6144
+
+# TCP_MSS sets LwIP PBUF_POOL_BUFSIZE (= TCP_MSS + ~74 header/reserve). Keep it at 1440
+# so PBUF_POOL_BUFSIZE ~= 1514: incoming Matter report messages need a ~1308-byte CHIP
+# PacketBuffer (payload + reserved header space), which OVERFLOWS a 1280-byte buffer
+# ("PacketBuffer: allocation exceeding buffer capacity limits: 1308 > 1280") and gets
+# silently discarded - dropping sensor/subscription reports. Do NOT lower this to 1206;
+# it saved a little heap but broke message reception. Heap is reclaimed elsewhere (small
+# task stacks, a dynamic comm line buffer, and a lean ServerList-based enumeration).
+CONFIG_LWIP_TCP_MSS=1440
+
+# CHIP packet buffers: MEMP_MEM_MALLOC=1 makes PBUF_POOL_SIZE irrelevant (heap-backed).
+# "pool EMPTY" = malloc() failed (contiguous heap exhausted).
+CONFIG_CHIP_PROJECT_CONFIG="main/CHIPProjectConfig.h"
+
+# Logging
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+# Enable chip log filter so SetLogFilter() can suppress Matter SDK verbose output at runtime
+CONFIG_CHIP_LOG_FILTERING=y
+
+# Console — pure UART0, no secondary USB-Serial-JTAG mirror. The secondary
+# console makes stdin a muxed /dev/console; disabling it binds stdin directly
+# to /dev/uart/0 so the driver-backed console (see console_input_init) delivers
+# typed input to fgetc(stdin). Serial console input did NOT work with the
+# secondary console enabled.
+CONFIG_ESP_CONSOLE_SECONDARY_NONE=y
+
+# WiFi — internet uplink for NTP. WiFi and Thread cannot run concurrently on
+# this ESP32-C6 (shared radio + insufficient RAM for both driver stacks — it
+# corrupts memory). So WiFi runs only in a short boot-time window to fetch NTP,
+# then is fully torn down before Thread starts (see run_ntp_window in main.cpp).
+CONFIG_ESP_WIFI_ENABLED=y
+
+# Keep the WiFi driver's footprint small — it only does low-rate NTP in a brief
+# boot window. Trim the RX/TX buffer pools and disable AMPDU (reorder buffers
+# unneeded at NTP data rates).
+CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=2
+CONFIG_ESP_WIFI_DYNAMIC_RX_BUFFER_NUM=8
+CONFIG_ESP_WIFI_DYNAMIC_TX_BUFFER_NUM=8
+CONFIG_ESP_WIFI_AMPDU_TX_ENABLED=n
+CONFIG_ESP_WIFI_AMPDU_RX_ENABLED=n
+
+# Keep WiFi code in flash, not IRAM. On the ESP32-C6 the WiFi IRAM optimization
+# carves ~several KB out of the same SRAM the heap uses; disabling it returns
+# that to the heap, which BLE Matter commissioning needs. WiFi runs a little
+# slower from flash cache — irrelevant for the brief NTP fetch.
+# CONFIG_ESP_WIFI_IRAM_OPT is not set
+# CONFIG_ESP_WIFI_EXTRA_IRAM_OPT is not set
+# CONFIG_ESP_WIFI_RX_IRAM_OPT is not set

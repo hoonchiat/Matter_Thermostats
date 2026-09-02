@@ -1,0 +1,114 @@
+--- a/components/esp_matter_controller/core/esp_matter_controller_client.h
++++ b/components/esp_matter_controller/core/esp_matter_controller_client.h
+@@ -133,6 +133,17 @@
+     esp_err_t init(NodeId node_id, FabricId fabric_id, uint16_t listen_port);
+     chip::app::DefaultICDClientStorage &get_icd_client_storage() { return m_icd_client_storage; }
+ 
++    /* LOCAL PATCH (Matter Hub V1.0) - allow an app-supplied ICD check-in delegate.
++     * Upstream hard-wires DefaultCheckInDelegate, whose OnCheckInComplete() only
++     * LOGS. For a LIT-ICD (IKEA BILRESA: 900 s idle / 1 s active) the check-in is
++     * the ONLY moment the device is reachable, so re-subscribing there is the
++     * only way it can recover from a hub reboot/power-cut without the user
++     * physically poking the device. Set BEFORE init(); nullptr = upstream. */
++    void set_check_in_delegate(chip::app::DefaultCheckInDelegate *delegate)
++    {
++        m_custom_check_in_delegate = delegate;
++    }
++
+ #ifdef CONFIG_ESP_MATTER_COMMISSIONER_ENABLE
+     /* enable_ble=false skips BLE manager init so the ESP32-C6 radio can be
+      * used by WiFi instead (ALPSTUGA project: BLE and WiFi cannot coexist on
+@@ -232,6 +243,8 @@
+     chip::app::DefaultICDClientStorage m_icd_client_storage;
+     chip::app::DefaultCheckInDelegate m_icd_check_in_delegate;
+     chip::app::CheckInHandler m_check_in_handler;
++    /* LOCAL PATCH (Matter Hub V1.0): optional app-supplied check-in delegate. */
++    chip::app::DefaultCheckInDelegate *m_custom_check_in_delegate = nullptr;
+ 
+ #ifdef CONFIG_ESP_MATTER_COMMISSIONER_ENABLE
+     chip::Controller::AutoCommissioner m_auto_commissioner;
+--- a/components/esp_matter_controller/core/esp_matter_controller_client.cpp
++++ b/components/esp_matter_controller/core/esp_matter_controller_client.cpp
+@@ -89,10 +89,14 @@
+     m_group_data_provider_listener.Init(system_state);
+     auto engine = chip::app::InteractionModelEngine::GetInstance();
+     ESP_RETURN_ON_FALSE(engine, ESP_ERR_INVALID_STATE, TAG, "No interaction model engine");
+-    ESP_RETURN_ON_FALSE(m_icd_check_in_delegate.Init(&m_icd_client_storage, engine) == CHIP_NO_ERROR, ESP_FAIL, TAG,
++    /* LOCAL PATCH (Matter Hub V1.0): wire the app's check-in delegate if one was
++     * registered via set_check_in_delegate(), else the stock default. */
++    chip::app::DefaultCheckInDelegate *check_in_delegate =
++        m_custom_check_in_delegate ? m_custom_check_in_delegate : &m_icd_check_in_delegate;
++    ESP_RETURN_ON_FALSE(check_in_delegate->Init(&m_icd_client_storage, engine) == CHIP_NO_ERROR, ESP_FAIL, TAG,
+                         "Failed to initialize check in delegate");
+     ESP_RETURN_ON_FALSE(m_check_in_handler.Init(system_state->ExchangeMgr(), &m_icd_client_storage,
+-                                                &m_icd_check_in_delegate, engine) == CHIP_NO_ERROR,
++                                                check_in_delegate, engine) == CHIP_NO_ERROR,
+                         ESP_FAIL, TAG, "Failed to initialize Check In handler");
+     return ESP_OK;
+ }
+--- a/connectedhomeip/connectedhomeip/src/platform/ESP32/nimble/peer.c
++++ b/connectedhomeip/connectedhomeip/src/platform/ESP32/nimble/peer.c
+@@ -512,6 +512,16 @@
+ {
+     const struct peer_svc * svc;
+ 
++    /* LOCAL PATCH (Matter Hub V1.0): defence in depth. Callers can legitimately
++     * hold a NULL peer once a connection is torn down (peer_find returns NULL);
++     * without this, &peer->svcs is address 0x8 and the device panics with a load
++     * access fault. Returning NULL lets callers take their existing not-found
++     * path instead. */
++    if (peer == NULL)
++    {
++        return NULL;
++    }
++
+     SLIST_FOREACH(svc, &peer->svcs, next)
+     {
+         if (ble_uuid_cmp(&svc->svc.uuid.u, uuid) == 0)
+--- a/connectedhomeip/connectedhomeip/src/platform/ESP32/nimble/BLEManagerImpl.cpp
++++ b/connectedhomeip/connectedhomeip/src/platform/ESP32/nimble/BLEManagerImpl.cpp
+@@ -663,6 +663,27 @@
+     int rc;
+     const struct peer * peer = peer_find(conId);
+ 
++    /* LOCAL PATCH (Matter Hub V1.0) - crash fix.
++     * peer_find() returns NULL once the BLE connection has been torn down, and
++     * the result was never checked: peer_chr_find_uuid() then dereferenced NULL
++     * (peer->svcs at offset 8 -> load from 0x8) and panicked the device.
++     *
++     * This is a real race, not a theoretical one: after PASE the commissioner
++     * drops the BLE link (Thread takes over) and frees the peer, but a pending
++     * BLEEndPoint send-ack timeout can still fire and call SendWriteRequest.
++     * Observed as: "Guru Meditation Error: Load access fault, MTVAL 0x00000008"
++     * ~2 s after "Attestation result ... accepting", rebooting the hub mid-
++     * commission so operational discovery never completed. Intermittent because
++     * it depends on whether that ack timer fires during teardown.
++     *
++     * Failing the write is correct and harmless here - the link is already gone
++     * and the endpoint is shutting down. */
++    if (peer == nullptr)
++    {
++        ChipLogError(Ble, "SendWriteRequest: peer already gone (conn closed) - dropping write");
++        return BLE_ERROR_GATT_WRITE_FAILED;
++    }
++
+     chr = peer_chr_find_uuid(peer, (ble_uuid_t *) (&ShortUUID_CHIPoBLEService), (ble_uuid_t *) (&UUID128_CHIPoBLEChar_RX));
+     if (chr == nullptr)
+     {
+--- a/connectedhomeip/connectedhomeip/src/lib/dnssd/Resolver_ImplMinimalMdns.cpp
++++ b/connectedhomeip/connectedhomeip/src/lib/dnssd/Resolver_ImplMinimalMdns.cpp
+@@ -61,7 +61,12 @@
+     uint16_t          port  = 0;
+     bool              valid = false;
+ };
+-static constexpr size_t kMaxThreadPeerHints = 4;
++/* LOCAL PATCH (Matter Hub V1.0): was 4, which starved a device once the hub
++ * managed >4 nodes (this table holds one hint per node id). Must be >=
++ * MAX_DEVICES plus headroom for the node being commissioned. Observed at
++ * 5 devices: "Thread peer hint table full - cannot register node ...0002",
++ * dropping a working ALPSTUGA to offline. Sized generously (>= MAX_DEVICES plus
++ * commissioning/staging headroom; MAX_DEVICES is 7 as of v1.5). */
++static constexpr size_t kMaxThreadPeerHints = 12;
+ static ThreadPeerHint   sThreadPeerHints[kMaxThreadPeerHints];
+ 
+ /// Handles processing of minmdns packet data.
