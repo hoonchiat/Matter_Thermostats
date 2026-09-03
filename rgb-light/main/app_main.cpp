@@ -18,7 +18,6 @@
 #include <log_heap_numbers.h>
 
 #include <app_priv.h>
-#include <app_reset.h>
 #if CHIP_DEVICE_CONFIG_ENABLE_THREAD
 #include <platform/ESP32/OpenthreadLauncher.h>
 #endif
@@ -176,8 +175,9 @@ extern "C" void app_main()
 
     /* Initialize driver */
     app_driver_handle_t light_handle = app_driver_light_init();
-    app_driver_handle_t button_handle = app_driver_button_init();
-    app_reset_button_register(button_handle);
+    /* BOOT button: short click toggles; hold ~15 s to factory-reset + re-pair
+     * (10 s, then a 5 s yellow-flash confirm) - handled in app_driver. */
+    app_driver_button_init();
 
     /* Create a Matter node and add the mandatory Root Node device type on endpoint 0 */
     node::config_t node_config;

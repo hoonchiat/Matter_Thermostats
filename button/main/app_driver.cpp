@@ -96,6 +96,80 @@ static void flash_gesture(uint16_t hue)
     esp_timer_start_once(s_flash_timer, 500 * 1000);   /* 0.5 s */
 }
 
+/* ---- factory-reset-to-pair gesture: hold BOOT for 15 s ------------------ *
+ * Nothing happens for the first 10 s; then the LED flashes YELLOW at a ~1 s
+ * interval for 5 s (the confirm window) while the button is still held.
+ * Releasing any time before 15 s cancels and returns to normal. At 15 s the
+ * device factory-resets (erases the Matter fabric) and reboots into pairing.
+ * BOOT is also the Matter switch input, so a reset hold still emits the normal
+ * long-press event as it passes the 1 s threshold. */
+#define RESET_CONFIRM_MS 10000   /* yellow confirm flash starts here          */
+#define RESET_FIRE_MS    15000   /* factory reset fires here (10 s + 5 s)     */
+#define RESET_BLINK_MS     500   /* yellow half-period -> ~1 s flash interval */
+
+static esp_timer_handle_t s_reset_timer = NULL;
+static int64_t s_reset_start_us   = 0;
+static bool    s_reset_confirming = false;
+
+static void reset_restore_led(void)
+{
+    /* Normal state is LED off (don't disturb the pairing slow-flash). */
+    if (s_led && !s_pairing) led_driver_set_power(s_led, false);
+}
+
+static void reset_fire_work(intptr_t) { esp_matter::factory_reset(); }
+
+static void reset_tick_cb(void *)
+{
+    uint32_t held = (uint32_t)((esp_timer_get_time() - s_reset_start_us) / 1000);
+    if (held >= RESET_FIRE_MS) {
+        esp_timer_stop(s_reset_timer);
+        s_reset_confirming = false;
+        ESP_LOGW(TAG, "Reset gesture complete (15 s) -> factory reset + re-pair");
+        chip::DeviceLayer::PlatformMgr().ScheduleWork(reset_fire_work, 0);
+        return;
+    }
+    if (held >= RESET_CONFIRM_MS) {
+        if (!s_reset_confirming) {
+            s_reset_confirming = true;
+            ESP_LOGW(TAG, "Reset gesture: keep holding to factory-reset (release to cancel)");
+        }
+        bool on = (((held - RESET_CONFIRM_MS) / RESET_BLINK_MS) & 1U) == 0U;
+        if (s_led) {
+            if (on) {
+                led_driver_set_hue(s_led, 60);          /* yellow (0..360) */
+                led_driver_set_saturation(s_led, 100);
+                led_driver_set_brightness(s_led, 40);
+                led_driver_set_power(s_led, true);
+            } else {
+                led_driver_set_power(s_led, false);
+            }
+        }
+    }
+}
+
+static void reset_press_down_cb(void *, void *)
+{
+    s_reset_start_us   = esp_timer_get_time();
+    s_reset_confirming = false;
+    if (!s_reset_timer) {
+        const esp_timer_create_args_t args = { .callback = reset_tick_cb, .name = "resethold" };
+        esp_timer_create(&args, &s_reset_timer);
+    }
+    esp_timer_stop(s_reset_timer);
+    esp_timer_start_periodic(s_reset_timer, 250 * 1000);   /* 250 ms tick */
+}
+
+static void reset_press_up_cb(void *, void *)
+{
+    if (s_reset_timer) esp_timer_stop(s_reset_timer);
+    if (s_reset_confirming) {
+        s_reset_confirming = false;
+        ESP_LOGI(TAG, "Reset gesture cancelled (released before 15 s)");
+        reset_restore_led();
+    }
+}
+
 /* ---- BOOT button -> Matter Switch (Generic Switch, cluster 0x003B) events ----
  * The Switch event senders touch the data model, so they run on the Matter task
  * via ScheduleWork. Position 1 = pressed, 0 = released. The three button
@@ -172,5 +246,11 @@ app_driver_handle_t app_driver_button_init(uint16_t switch_endpoint_id)
     iot_button_register_cb(handle, BUTTON_DOUBLE_CLICK,     NULL, btn_gesture_cb, (void *)GEST_DOUBLE);
     iot_button_register_cb(handle, BUTTON_LONG_PRESS_START, NULL, btn_gesture_cb, (void *)GEST_LONG_START);
     iot_button_register_cb(handle, BUTTON_LONG_PRESS_UP,    NULL, btn_gesture_cb, (void *)GEST_LONG_UP);
+
+    /* Hold BOOT ~15 s (10 s + a 5 s yellow-flash confirm) to factory-reset and
+     * re-pair; releasing before 15 s cancels. Runs alongside the switch events
+     * above (a reset hold still emits the 1 s long-press). */
+    iot_button_register_cb(handle, BUTTON_PRESS_DOWN, NULL, reset_press_down_cb, NULL);
+    iot_button_register_cb(handle, BUTTON_PRESS_UP,   NULL, reset_press_up_cb,   NULL);
     return (app_driver_handle_t)handle;
 }
