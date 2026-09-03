@@ -45,6 +45,8 @@
   <h1>Matter Provisioning Station</h1>
   <div class="sub">Flashes a <b>unique commissioning identity</b> (discriminator + passcode + serial) into each ESP32-C6 <b>Light</b> or <b>Button</b>, keeps a device database, and prints a QR label. Firmware is embedded — works offline in desktop Chrome/Edge.</div>
 
+  <div class="note info" style="margin-top:14px">Only the Light and Button carry a per-device identity. To flash the <b>Hub</b> or <b>Gateway Portal</b> (or plain-flash a Light/Button without changing its identity), use <a href="flash-tool.html">flash-tool.html</a> instead.</div>
+
   <div id="unsupported" class="note warn hide"><b>Web Serial not available.</b> Open this in <b>desktop Chrome or Edge</b>.</div>
 
   <!-- 1 · DATABASE -->
