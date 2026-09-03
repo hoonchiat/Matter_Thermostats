@@ -176,8 +176,9 @@ static void reset_press_up_cb(void *, void *)
  * functions map to distinguishable momentary-switch event sequences:
  *   single press -> InitialPress, ShortRelease, MultiPressComplete(count=1)
  *   double press -> InitialPress, ShortRelease, MultiPressComplete(count=2)
- *   long  press  -> InitialPress, LongPress ... (on release) LongRelease         */
-enum btn_gesture { GEST_SINGLE = 1, GEST_DOUBLE, GEST_LONG_START, GEST_LONG_UP };
+ *   long  press  -> InitialPress, LongPress, LongRelease -- DEFERRED to release so a
+ *                   reset hold (>= 10 s) emits no switch event (see btn_long_release_cb) */
+enum btn_gesture { GEST_SINGLE = 1, GEST_DOUBLE, GEST_LONG };
 
 static void switch_event_work(intptr_t g)
 {
@@ -196,28 +197,42 @@ static void switch_event_work(intptr_t g)
         send_multi_press_complete(ep, 1, 2);
         ESP_LOGI(TAG, "Button: DOUBLE press -> MultiPressComplete(2)");
         break;
-    case GEST_LONG_START:
+    case GEST_LONG:
+        /* Deferred to release: the whole long-press interaction in one go. */
         send_initial_press(ep, 1);
         send_long_press(ep, 1);
-        ESP_LOGI(TAG, "Button: LONG press -> InitialPress/LongPress");
-        break;
-    case GEST_LONG_UP:
         send_long_release(ep, 1);
-        ESP_LOGI(TAG, "Button: LONG release -> LongRelease");
+        ESP_LOGI(TAG, "Button: LONG press -> InitialPress/LongPress/LongRelease (on release)");
         break;
     }
 }
 
 static void btn_gesture_cb(void *arg, void *data)
 {
-    /* LED feedback so the user sees which action fired (off otherwise). */
+    /* Single/double fire on their own click events; LED feedback (off otherwise). */
     switch ((btn_gesture)(intptr_t)data) {
-    case GEST_SINGLE:     flash_gesture(120); break;   /* green */
-    case GEST_DOUBLE:     flash_gesture(240); break;   /* blue  */
-    case GEST_LONG_START: flash_gesture(0);   break;   /* red   */
-    default: break;                                    /* LONG_UP: no extra flash */
+    case GEST_SINGLE: flash_gesture(120); break;   /* green */
+    case GEST_DOUBLE: flash_gesture(240); break;   /* blue  */
+    default: break;
     }
     chip::DeviceLayer::PlatformMgr().ScheduleWork(switch_event_work, (intptr_t)data);
+}
+
+/* Long press is DEFERRED to release (BUTTON_LONG_PRESS_UP): the Matter long-press
+ * fires only when the button is let go, and only if the hold was shorter than the
+ * reset confirm window. A hold >= RESET_CONFIRM_MS (10 s) is a factory-reset
+ * gesture - handled by the reset detector - and emits NOTHING to Matter, so a
+ * reset hold no longer trips a bound target. */
+static void btn_long_release_cb(void *arg, void *data)
+{
+    /* Same clock the reset detector uses (s_reset_start_us set at PRESS_DOWN). */
+    uint32_t held = (uint32_t)((esp_timer_get_time() - s_reset_start_us) / 1000);
+    if (held >= RESET_CONFIRM_MS) {
+        ESP_LOGI(TAG, "Long hold %u ms is a reset gesture -> no switch event", (unsigned)held);
+        return;
+    }
+    flash_gesture(0);   /* red */
+    chip::DeviceLayer::PlatformMgr().ScheduleWork(switch_event_work, (intptr_t)GEST_LONG);
 }
 
 app_driver_handle_t app_driver_led_init()
@@ -242,10 +257,10 @@ app_driver_handle_t app_driver_button_init(uint16_t switch_endpoint_id)
 
     /* Three button functions -> Matter Switch events (usr_data carries the gesture).
      * Long-press threshold = CONFIG_BUTTON_LONG_PRESS_TIME_MS (set to 1000 ms). */
-    iot_button_register_cb(handle, BUTTON_SINGLE_CLICK,     NULL, btn_gesture_cb, (void *)GEST_SINGLE);
-    iot_button_register_cb(handle, BUTTON_DOUBLE_CLICK,     NULL, btn_gesture_cb, (void *)GEST_DOUBLE);
-    iot_button_register_cb(handle, BUTTON_LONG_PRESS_START, NULL, btn_gesture_cb, (void *)GEST_LONG_START);
-    iot_button_register_cb(handle, BUTTON_LONG_PRESS_UP,    NULL, btn_gesture_cb, (void *)GEST_LONG_UP);
+    iot_button_register_cb(handle, BUTTON_SINGLE_CLICK,  NULL, btn_gesture_cb,      (void *)GEST_SINGLE);
+    iot_button_register_cb(handle, BUTTON_DOUBLE_CLICK,  NULL, btn_gesture_cb,      (void *)GEST_DOUBLE);
+    /* Long press deferred to release (btn_long_release_cb) so a reset hold is silent. */
+    iot_button_register_cb(handle, BUTTON_LONG_PRESS_UP, NULL, btn_long_release_cb, NULL);
 
     /* Hold BOOT ~15 s (10 s + a 5 s yellow-flash confirm) to factory-reset and
      * re-pair; releasing before 15 s cancels. Runs alongside the switch events
