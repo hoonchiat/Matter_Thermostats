@@ -16,6 +16,7 @@
 
 #include <common_macros.h>
 #include <app_priv.h>
+#include "provisioning.h"
 #if CHIP_DEVICE_CONFIG_ENABLE_THREAD
 #include <platform/ESP32/OpenthreadLauncher.h>
 #endif
@@ -92,6 +93,10 @@ extern "C" void app_main()
 
     nvs_flash_init();
 
+    /* Per-device commissioning identity from the `fctry` partition (or test
+     * defaults). MUST run before esp_matter::start() so the provider is registered. */
+    provisioning_init("PJB-A01-0001");
+
     /* Onboard RGB LED - pairing-mode indicator only. */
     app_driver_led_init();
 
@@ -107,8 +112,10 @@ extern "C" void app_main()
     if (root_ep) {
         cluster_t *basic = cluster::get(root_ep, BasicInformation::Id);
         if (basic) {
-            static char serial[] = "PJB-A01-0001";
-            cluster::basic_information::attribute::create_serial_number(basic, serial, (uint16_t)strlen(serial));
+            const char *sn = provisioning_serial();   /* from fctry partition, or the default above */
+            if (sn && sn[0]) {
+                cluster::basic_information::attribute::create_serial_number(basic, (char *) sn, (uint16_t) strlen(sn));
+            }
         }
     }
 

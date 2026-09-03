@@ -75,3 +75,8 @@ CONFIG_SUPPORT_SWITCH_CLUSTER=y
 # Double-press inter-click window (iot_button uses SHORT_PRESS_TIME as the gap it
 # waits for a 2nd click). 180ms default was too fast; 600ms allows a relaxed double.
 CONFIG_BUTTON_SHORT_PRESS_TIME_MS=600
+
+# Per-device provisioning: custom CommissionableDataProvider (main/provisioning.cpp)
+# reads discriminator/passcode/serial from the `fctry` partition (written by the HTML
+# provisioning tool). DAC stays the built-in test DAC (EXAMPLE_DAC_PROVIDER).
+CONFIG_CUSTOM_COMMISSIONABLE_DATA_PROVIDER=y

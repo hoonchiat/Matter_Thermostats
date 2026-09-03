@@ -6,6 +6,8 @@
    CONDITIONS OF ANY KIND, either express or implied.
 */
 
+#include <string.h>
+
 #include <esp_err.h>
 #include <esp_log.h>
 #include <nvs_flash.h>
@@ -18,6 +20,7 @@
 #include <log_heap_numbers.h>
 
 #include <app_priv.h>
+#include "provisioning.h"
 #if CHIP_DEVICE_CONFIG_ENABLE_THREAD
 #include <platform/ESP32/OpenthreadLauncher.h>
 #endif
@@ -171,6 +174,10 @@ extern "C" void app_main()
     /* Initialize the ESP NVS layer */
     nvs_flash_init();
 
+    /* Per-device commissioning identity from the `fctry` partition (or test defaults).
+     * MUST run before esp_matter::start() so the custom provider is registered. */
+    provisioning_init("PJL-A01-0000");
+
     MEMORY_PROFILER_DUMP_HEAP_STAT("Bootup");
 
     /* Initialize driver */
@@ -185,6 +192,17 @@ extern "C" void app_main()
     // node handle can be used to add/modify other endpoints.
     node_t *node = node::create(&node_config, app_attribute_update_cb, app_identification_cb);
     ABORT_APP_ON_FAILURE(node != nullptr, ESP_LOGE(TAG, "Failed to create Matter node"));
+
+    /* Per-device SerialNumber on Basic Information (ep0) - from the provisioning
+     * partition (or default). The stock extended_color_light data model omits it. */
+    endpoint_t *root_ep = endpoint::get(node, 0);
+    if (root_ep) {
+        cluster_t *basic = cluster::get(root_ep, BasicInformation::Id);
+        const char *sn = provisioning_serial();
+        if (basic && sn && sn[0]) {
+            cluster::basic_information::attribute::create_serial_number(basic, (char *) sn, (uint16_t) strlen(sn));
+        }
+    }
 
     MEMORY_PROFILER_DUMP_HEAP_STAT("node created");
 
