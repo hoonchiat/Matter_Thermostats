@@ -106,14 +106,23 @@
   .cfgform{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:11px 18px}
   .cfgform label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--mut)}
   .cfgform input{width:100%}
-  .chartwrap{background:#0b0f18;border:1px solid var(--line);border-radius:8px;padding:6px 4px 2px;overflow-x:auto}
-  .legend{display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:8px;font-size:12px;color:var(--mut)}
-  .lg{display:inline-flex;align-items:center;gap:6px} .lg i{width:14px;height:3px;border-radius:2px;display:inline-block}
-  .lg b{color:var(--fg);font-weight:600}
+  .chd{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:11px;flex-wrap:wrap}
+  .mgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(268px,1fr));gap:11px}
+  .mchart{background:#0b0f18;border:1px solid var(--line);border-radius:9px;padding:9px 11px 5px;position:relative}
+  .mch-h{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:3px}
+  .mch-name{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--mut)}
+  .mch-name i{width:9px;height:9px;border-radius:3px;display:inline-block}
+  .mch-val{font-size:17px;font-weight:650;color:var(--fg);white-space:nowrap}
+  .mch-val em{font-size:11px;color:var(--mut);font-weight:500;font-style:normal;margin-left:2px}
+  .mch-empty{color:var(--mut);font-size:12px;padding:30px 0;text-align:center}
+  .mchart svg{width:100%;height:auto;display:block;touch-action:none}
   .ctip{position:absolute;pointer-events:none;opacity:0;transition:opacity .08s;z-index:6;
-        background:#12203a;border:1px solid var(--line);border-radius:8px;padding:6px 9px;font-size:12px;
-        color:var(--mut);display:flex;flex-direction:column;gap:3px;box-shadow:0 4px 16px #0009;white-space:nowrap}
-  .ctip .tt{color:var(--fg);font-weight:600;font-size:11px}
+        background:#12203a;border:1px solid var(--line);border-radius:8px;padding:7px 10px;font-size:12px;
+        color:var(--mut);display:flex;flex-direction:column;gap:3px;box-shadow:0 6px 18px #0009;white-space:nowrap}
+  .ctip .tt{color:var(--fg);font-weight:600;font-size:11px;margin-bottom:1px}
+  .ctip .cr{display:flex;align-items:center;gap:6px;justify-content:space-between}
+  .ctip .cr i{width:8px;height:8px;border-radius:2px;display:inline-block;margin-right:2px}
+  .ctip .cr b{color:var(--fg);font-weight:600;margin-left:10px}
   #toasts{position:fixed;right:14px;bottom:14px;display:flex;flex-direction:column;gap:8px;z-index:20}
   .toast{background:#12203a;border:1px solid var(--acc);color:var(--fg);border-radius:8px;padding:9px 13px;font-size:13px;box-shadow:0 6px 18px #0008;max-width:320px}
   .toast.bad{border-color:var(--bad)}
@@ -399,79 +408,75 @@ async function loadCharts(){const r=await req({cmd:'history',dev:0});
 const CH_HM=s=>{const d=new Date(s*1000);return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');};
 const lastNum=a=>{for(let i=a.length-1;i>=0;i--)if(a[i]!=null)return a[i];return null;};
 function chSpan(t){const s=(t[t.length-1]-t[0])||0,m=Math.round(s/60);return m<1?'<1m':m<60?m+'m':Math.floor(m/60)+'h'+String(m%60).padStart(2,'0');}
-function svgChart(t,series){
-  // proper multi-axis chart: Temp+Humidity axes on the left, CO2+PM2.5 on the right;
-  // each a colour-matched vertical scale with ticks. Shared gridlines (4 rows).
-  const W=720,H=250,mT=18,mB=26,plotT=mT,plotB=H-mB,plotH=plotB-plotT,plotL=100,plotR=620;
-  const axDef=[{x:44,side:'L'},{x:92,side:'L'},{x:628,side:'R'},{x:676,side:'R'}];
+/* Small multiples: one single-axis area+line mini-chart per metric (no dual axes). */
+const CH_MINSPAN=[2,4,120,6];                 // don't zoom into noise on a flat metric
+const CHM={W:320,H:132,pL:38,pR:9,pT:10,pB:20};
+function chRange(nums,si){let mn=Math.min(...nums),mx=Math.max(...nums);const ms=CH_MINSPAN[si]||1;
+  if(mx-mn<ms){const md=(mn+mx)/2;mn=md-ms/2;mx=md+ms/2;}const pad=(mx-mn)*0.14||1;return[mn-pad,mx+pad];}
+function miniChart(t,vals,color,si){
+  const {W,H,pL,pR,pT,pB}=CHM,plotW=W-pL-pR,baseY=H-pB,plotH=baseY-pT;
+  const nums=vals.filter(v=>v!=null),[mn,mx]=chRange(nums,si);
   const tmin=t[0],tmax=t[t.length-1]===tmin?tmin+1:t[t.length-1],tsp=tmax-tmin;
-  const xOf=tt=>plotL+(tt-tmin)/tsp*(plotR-plotL);
-  let grid='';for(let i=0;i<4;i++){const y=plotT+plotH*i/3;grid+=`<line x1="${plotL}" y1="${y}" x2="${plotR}" y2="${y}" stroke="var(--line)" stroke-width="0.5"/>`;}
-  let axes='',paths='';
-  series.forEach((s,si)=>{const nums=s.vals.filter(v=>v!=null);if(nums.length<2)return;
-    let mn=Math.min(...nums),mx=Math.max(...nums);
-    const minsp=[2,4,100,5][si]||1;                 // don't zoom into noise on a flat metric
-    if(mx-mn<minsp){const mid=(mn+mx)/2;mn=mid-minsp/2;mx=mid+minsp/2;}
-    const prec=si<2?1:0,ax=axDef[si];
-    axes+=`<line x1="${ax.x}" y1="${plotT}" x2="${ax.x}" y2="${plotB}" stroke="${s.color}" stroke-width="1" opacity="0.5"/>`
-       +  `<text x="${ax.x}" y="${plotT-6}" fill="${s.color}" font-size="10" text-anchor="middle">${s.name}</text>`;
-    for(let i=0;i<4;i++){const val=mn+(mx-mn)*i/3,y=plotB-plotH*i/3;
-      const tx=ax.side==='L'?ax.x-4:ax.x+4,anc=ax.side==='L'?'end':'start';
-      axes+=`<line x1="${ax.x-2}" y1="${y}" x2="${ax.x+2}" y2="${y}" stroke="${s.color}" stroke-width="1"/>`
-         +  `<text x="${tx}" y="${y+3.5}" fill="${s.color}" font-size="10" text-anchor="${anc}">${val.toFixed(prec)}</text>`;}
-    let dp='',started=false;
-    for(let i=0;i<t.length;i++){const v=s.vals[i];if(v==null){started=false;continue;}
-      const x=xOf(t[i]),y=plotB-(v-mn)/(mx-mn)*plotH;dp+=(started?'L':'M')+x.toFixed(1)+' '+y.toFixed(1)+' ';started=true;}
-    paths+=`<path d="${dp}" fill="none" stroke="${s.color}" stroke-width="1.7" stroke-linejoin="round"/>`;});
-  const xlab=`<text x="${plotL}" y="${H-6}" fill="var(--mut)" font-size="10">${CH_HM(tmin)}</text><text x="${plotR}" y="${H-6}" fill="var(--mut)" font-size="10" text-anchor="end">${CH_HM(tmax)}</text>`;
-  const cursor=`<line class="cx" x1="0" x2="0" y1="${plotT}" y2="${plotB}" stroke="var(--fg)" stroke-width="0.7" opacity="0"/>`
-    + series.map(s=>`<circle class="cd" r="3.2" fill="${s.color}" stroke="var(--bg)" stroke-width="1" opacity="0"/>`).join('');
-  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;min-width:660px;height:auto;display:block">${grid}${axes}${paths}${cursor}${xlab}</svg>`;}
+  const xOf=tt=>pL+(tt-tmin)/tsp*plotW,yOf=v=>baseY-(v-mn)/(mx-mn)*plotH,pr=si<2?1:0;
+  let grid='',ylab='';
+  for(let i=0;i<=2;i++){const yv=mn+(mx-mn)*i/2,y=yOf(yv);
+    grid+=`<line x1="${pL}" y1="${y.toFixed(1)}" x2="${W-pR}" y2="${y.toFixed(1)}" stroke="var(--line)" stroke-width="0.5" opacity="0.55"/>`;
+    ylab+=`<text x="${pL-5}" y="${(y+3).toFixed(1)}" fill="var(--mut)" font-size="9" text-anchor="end">${Math.abs(yv)>=100?Math.round(yv):yv.toFixed(pr)}</text>`;}
+  const segs=[];let cur=null;
+  for(let i=0;i<t.length;i++){const v=vals[i];if(v==null){if(cur){segs.push(cur);cur=null;}continue;}(cur||(cur=[])).push([xOf(t[i]),yOf(v)]);}
+  if(cur)segs.push(cur);
+  let line='',area='';
+  for(const seg of segs){if(!seg.length)continue;
+    let d='M'+seg[0][0].toFixed(1)+' '+seg[0][1].toFixed(1);for(let i=1;i<seg.length;i++)d+='L'+seg[i][0].toFixed(1)+' '+seg[i][1].toFixed(1);
+    line+=`<path d="${d}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+    area+=`<path d="${d}L${seg[seg.length-1][0].toFixed(1)} ${baseY}L${seg[0][0].toFixed(1)} ${baseY}Z" fill="url(#g${si})"/>`;}
+  let li=-1;for(let i=t.length-1;i>=0;i--)if(vals[i]!=null){li=i;break;}
+  const dot=li<0?'':`<circle cx="${xOf(t[li]).toFixed(1)}" cy="${yOf(vals[li]).toFixed(1)}" r="3" fill="${color}" stroke="var(--card2)" stroke-width="1.5"/>`;
+  const grad=`<defs><linearGradient id="g${si}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${color}" stop-opacity="0.24"/><stop offset="1" stop-color="${color}" stop-opacity="0.015"/></linearGradient></defs>`;
+  const hov=`<line class="cx" x1="0" x2="0" y1="${pT}" y2="${baseY}" stroke="var(--fg)" stroke-width="0.8" stroke-dasharray="2 2" opacity="0"/><circle class="cd" r="3.4" fill="${color}" stroke="var(--card2)" stroke-width="1.5" opacity="0"/>`;
+  return `<svg viewBox="0 0 ${W} ${H}" data-si="${si}">${grad}${grid}${area}${line}${dot}${hov}${ylab}</svg>`;}
 const CH_SERIES=[['temp','Temp','°C','#ff8a5c'],['hum','Humidity','%','#4ea1ff'],['co2','CO₂','ppm','#37d67a'],['pm25','PM2.5','µg/m³','#c98cff']];
 function renderCharts(){
   const air=st.devices.filter(isAir),box=$('#charts');
   if(!air.length){box.innerHTML='<div class="empty">No air-quality sensors paired.</div>';return;}
   box.innerHTML=air.map(d=>{const h=chartHist[d.slot];
-    if(!h||h.t.length<2)return `<div class="sec"><h3>#${d.slot} ${esc(d.label||d.name||'?')}</h3><div class="empty">collecting samples…</div></div>`;
-    const series=CH_SERIES.map(s=>({name:s[1],unit:s[2],color:s[3],vals:h[s[0]]}));
-    return `<div class="sec" data-slot="${d.slot}"><div class="row" style="justify-content:space-between">
-      <h3>#${d.slot} ${esc(d.label||d.name||'?')}</h3><span class="sub">${h.t.length} pts · ${chSpan(h.t)}</span></div>
-      <div class="chartwrap" style="position:relative">${svgChart(h.t,series)}<div class="ctip"></div></div>
-      <div class="legend">${series.map(s=>{const v=lastNum(s.vals);return `<span class="lg"><i style="background:${s.color}"></i>${s.name} <b>${v==null?'—':fmt(v)}</b>${s.unit}</span>`;}).join('')}</div></div>`;
+    if(!h||h.t.length<2)return `<div class="sec"><div class="chd"><h3>#${d.slot} ${esc(d.label||d.name||'?')}</h3></div><div class="empty">collecting samples…</div></div>`;
+    const cells=CH_SERIES.map((s,si)=>{const vals=h[s[0]],v=lastNum(vals),have=vals.some(x=>x!=null);
+      return `<div class="mchart" data-si="${si}"><div class="mch-h"><span class="mch-name"><i style="background:${s[3]}"></i>${s[1]}</span>`
+        +`<span class="mch-val">${v==null?'—':fmt(v)+`<em>${s[2]}</em>`}</span></div>`
+        +(have?miniChart(h.t,vals,s[3],si):`<div class="mch-empty">no data</div>`)+`</div>`;}).join('');
+    return `<div class="sec" data-slot="${d.slot}"><div class="chd"><h3>#${d.slot} ${esc(d.label||d.name||'?')}</h3>`
+      +`<span class="sub">${h.t.length} pts · ${chSpan(h.t)} · ${CH_HM(h.t[0])}–${CH_HM(h.t[h.t.length-1])}</span></div>`
+      +`<div class="mgrid">${cells}</div><div class="ctip"></div></div>`;
   }).join('');
   box.querySelectorAll('.sec[data-slot]').forEach(card=>attachHover(card,+card.dataset.slot));
 }
-/* Cursor crosshair + tooltip: nearest sample by time, values + time at that x. */
+/* Synchronized crosshair + shared tooltip across the metric small-multiples. */
 function attachHover(card,slot){
-  const CW=720,pL=100,pR=620,pT=18,pB=224,pH=pB-pT;   // must match svgChart
-  const wrap=card.querySelector('.chartwrap'),svg=wrap.querySelector('svg'),
-        cx=svg.querySelector('.cx'),dots=[...svg.querySelectorAll('.cd')],tip=wrap.querySelector('.ctip');
+  const h=chartHist[slot]; if(!h)return;
+  const {W,pL,pR,pT,pB,H}=CHM,plotW=W-pL-pR,baseY=H-pB,plotH=baseY-pT;
+  const svgs=[...card.querySelectorAll('.mchart svg')],tip=card.querySelector('.ctip');
+  const ranges=CH_SERIES.map((s,si)=>{const nums=h[s[0]].filter(v=>v!=null);return nums.length?chRange(nums,si):null;});
   const move=e=>{
-    const h=chartHist[slot]; if(!h||h.t.length<2)return;
     chartsHover=true;
-    const r=svg.getBoundingClientRect(); const vbX=(e.clientX-r.left)/r.width*CW;
+    const sv=e.currentTarget,r=sv.getBoundingClientRect(),vbX=(e.clientX-r.left)/r.width*W;
     const tmin=h.t[0],tmax=h.t[h.t.length-1]===tmin?tmin+1:h.t[h.t.length-1],tsp=tmax-tmin;
-    let frac=(vbX-pL)/(pR-pL); frac=Math.max(0,Math.min(1,frac));
-    const tt=tmin+frac*tsp; let bi=0,bd=1e18;
-    for(let i=0;i<h.t.length;i++){const dd=Math.abs(h.t[i]-tt);if(dd<bd){bd=dd;bi=i;}}
-    const px=pL+(h.t[bi]-tmin)/tsp*(pR-pL);
-    cx.setAttribute('x1',px);cx.setAttribute('x2',px);cx.setAttribute('opacity','0.6');
-    let rows='';
-    CH_SERIES.forEach((s,si)=>{const arr=h[s[0]],v=arr[bi],nums=arr.filter(x=>x!=null);
-      if(!nums.length||v==null){dots[si].setAttribute('opacity','0');rows+=`<span class="lg"><i style="background:${s[3]}"></i>${s[1]} <b>—</b></span>`;return;}
-      let mn=Math.min(...nums),mx=Math.max(...nums),msp=[2,4,100,5][si];
-      if(mx-mn<msp){const md=(mn+mx)/2;mn=md-msp/2;mx=md+msp/2;}
-      const y=pB-(v-mn)/(mx-mn)*pH; dots[si].setAttribute('cx',px);dots[si].setAttribute('cy',y);dots[si].setAttribute('opacity','1');
-      rows+=`<span class="lg"><i style="background:${s[3]}"></i>${s[1]} <b>${fmt(v)}</b>${s[2]}</span>`;});
-    tip.innerHTML=`<div class="tt">${CH_HM(h.t[bi])}</div>${rows}`;
-    tip.style.opacity='1';
-    const wr=wrap.getBoundingClientRect(),tw=tip.offsetWidth||140;
-    let lx=e.clientX-wr.left+wrap.scrollLeft+12; if(lx+tw>wrap.scrollLeft+wrap.clientWidth-4)lx=e.clientX-wr.left+wrap.scrollLeft-tw-12;
-    tip.style.left=Math.max(2,lx)+'px'; tip.style.top=Math.max(2,e.clientY-wr.top+12)+'px';
+    let frac=(vbX-pL)/plotW;frac=Math.max(0,Math.min(1,frac));const tt=tmin+frac*tsp;
+    let bi=0,bd=1e18;for(let i=0;i<h.t.length;i++){const dd=Math.abs(h.t[i]-tt);if(dd<bd){bd=dd;bi=i;}}
+    const px=pL+(h.t[bi]-tmin)/tsp*plotW;let rows='';
+    svgs.forEach((g,si)=>{const cx=g.querySelector('.cx'),cd=g.querySelector('.cd'),v=h[CH_SERIES[si][0]][bi],rg=ranges[si];
+      cx.setAttribute('x1',px);cx.setAttribute('x2',px);cx.setAttribute('opacity','0.55');
+      if(v==null||!rg){cd.setAttribute('opacity','0');rows+=`<div class="cr"><span><i style="background:${CH_SERIES[si][3]}"></i>${CH_SERIES[si][1]}</span><b>—</b></div>`;return;}
+      const y=baseY-(v-rg[0])/(rg[1]-rg[0])*plotH;cd.setAttribute('cx',px);cd.setAttribute('cy',y);cd.setAttribute('opacity','1');
+      rows+=`<div class="cr"><span><i style="background:${CH_SERIES[si][3]}"></i>${CH_SERIES[si][1]}</span><b>${fmt(v)}<em style="color:var(--mut);font-weight:400"> ${CH_SERIES[si][2]}</em></b></div>`;});
+    tip.innerHTML=`<div class="tt">${CH_HM(h.t[bi])}</div>${rows}`;tip.style.opacity='1';
+    const cr=card.getBoundingClientRect(),tw=tip.offsetWidth||150,th=tip.offsetHeight||90;
+    let lx=e.clientX-cr.left+14;if(lx+tw>card.clientWidth-4)lx=e.clientX-cr.left-tw-14;
+    let ly=e.clientY-cr.top+12;if(ly+th>card.clientHeight-4)ly=card.clientHeight-th-4;
+    tip.style.left=Math.max(4,lx)+'px';tip.style.top=Math.max(4,ly)+'px';
   };
-  const leave=()=>{chartsHover=false;cx.setAttribute('opacity','0');dots.forEach(d=>d.setAttribute('opacity','0'));tip.style.opacity='0';if(st.tab==='charts')renderCharts();};
-  wrap.addEventListener('pointermove',move);
-  wrap.addEventListener('pointerleave',leave);
+  const leave=()=>{chartsHover=false;svgs.forEach(g=>{g.querySelector('.cx').setAttribute('opacity','0');g.querySelector('.cd').setAttribute('opacity','0');});tip.style.opacity='0';if(st.tab==='charts')renderCharts();};
+  svgs.forEach(g=>{g.addEventListener('pointermove',move);g.addEventListener('pointerleave',leave);});
 }
 
 /* ---------- Automation ---------- */
