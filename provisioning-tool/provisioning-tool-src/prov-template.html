@@ -1,0 +1,355 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Matter Provisioning Station — Light &amp; Button</title>
+<style>
+  :root{--bg:#0f1420;--card:#1a2233;--card2:#141b29;--line:#2b3650;--fg:#e6ecf5;--mut:#8fa0bd;--acc:#4ea1ff;--on:#37d67a;--bad:#ff6b6b;--warn:#ffcf5c;--rad:12px}
+  *{box-sizing:border-box}
+  body{margin:0;font:15px/1.55 system-ui,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--fg)}
+  .wrap{max-width:920px;margin:0 auto;padding:24px 18px 80px}
+  h1{font-size:23px;margin:0 0 4px}
+  .sub{color:var(--mut);font-size:13px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--rad);padding:16px 18px;margin-top:16px}
+  .step{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--acc);margin-bottom:10px;font-weight:700}
+  .row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+  button{font:600 14px/1 inherit;padding:11px 16px;border-radius:9px;border:0;cursor:pointer;background:var(--acc);color:#04213f}
+  button.sec{background:#26324a;color:var(--fg)}
+  button:disabled{opacity:.4;cursor:not-allowed}
+  label.fld{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--mut)}
+  input,select{font:inherit;padding:9px 10px;border-radius:8px;border:1px solid var(--line);background:var(--card2);color:var(--fg)}
+  input[readonly]{color:var(--acc);font-family:ui-monospace,monospace}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .chip{display:inline-block;font:700 12px/1 ui-monospace,monospace;padding:4px 8px;border-radius:6px;background:#26324a;color:var(--acc)}
+  .status{margin-top:10px;font-size:14px;min-height:20px}
+  .ok{color:var(--on)} .err{color:var(--bad)} .warnc{color:var(--warn)}
+  .bar{height:9px;background:#26324a;border-radius:6px;overflow:hidden;margin-top:12px}
+  .bar>i{display:block;height:100%;width:0;background:var(--acc);transition:width .18s}
+  pre.log{background:#0a0f18;border:1px solid var(--line);border-radius:8px;padding:10px;font:12px/1.5 ui-monospace,monospace;max-height:200px;overflow:auto;white-space:pre-wrap;margin-top:12px;color:#cfe0f5}
+  table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}
+  th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)}
+  th{color:var(--mut);font-weight:600;font-size:12px}
+  td.mono{font-family:ui-monospace,monospace;color:var(--acc)}
+  .note{border-radius:8px;padding:10px 12px;font-size:13px;margin-top:12px}
+  .note.warn{background:#241d0f;border:1px solid #5a4a1e;color:var(--warn)}
+  .note.info{background:#0f1b2e;border:1px solid #26324a;color:var(--mut)}
+  .hide{display:none}
+  #labelPrev{background:#fff;border-radius:8px;margin-top:12px;max-width:100%}
+  code{font:12.5px ui-monospace,monospace;color:var(--acc)}
+  a{color:var(--acc)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Matter Provisioning Station</h1>
+  <div class="sub">Flashes a <b>unique commissioning identity</b> (discriminator + passcode + serial) into each ESP32-C6 <b>Light</b> or <b>Button</b>, keeps a device database, and prints a QR label. Firmware is embedded — works offline in desktop Chrome/Edge.</div>
+
+  <div id="unsupported" class="note warn hide"><b>Web Serial not available.</b> Open this in <b>desktop Chrome or Edge</b>.</div>
+
+  <!-- 1 · DATABASE -->
+  <div class="card">
+    <div class="step">1 · Device database</div>
+    <div class="sub">The database auto-increments serials, discriminators and passcodes and remembers what's been flashed. It's a file you own.</div>
+    <div class="row" style="margin-top:10px">
+      <button id="openBtn" class="sec">Open database file…</button>
+      <button id="newBtn" class="sec">New database…</button>
+      <button id="importBtn" class="sec hide">Import JSON…</button>
+      <button id="exportBtn" class="sec hide">Export JSON</button>
+      <input id="importFile" type="file" accept=".json" class="hide">
+      <span id="dbStatus" class="sub"></span>
+    </div>
+    <div id="dbTableWrap" class="hide">
+      <table id="dbTable"><thead><tr><th>#</th><th>Unit</th><th>Serial</th><th>Disc</th><th>Passcode</th><th>When</th></tr></thead><tbody></tbody></table>
+    </div>
+    <div id="fsaNote" class="note info hide">This browser can't keep a live database file here, so use <b>Export/Import JSON</b> to save &amp; reload it (a copy is also cached in this browser). For the full "remembers automatically" experience, serve this folder over localhost (<code>python -m http.server</code>) and reload from there.</div>
+  </div>
+
+  <!-- 2 · NEXT DEVICE -->
+  <div class="card">
+    <div class="step">2 · Next device</div>
+    <div class="grid">
+      <label class="fld">Device type
+        <select id="devType"><option value="light">RGB Light (C6)</option><option value="button">Button (C6)</option></select>
+      </label>
+      <label class="fld">Unit name (on the label)
+        <input id="unitName" type="text">
+      </label>
+      <label class="fld">Serial number
+        <input id="serial" type="text" readonly>
+      </label>
+      <label class="fld">Discriminator (0–4095)
+        <input id="disc" type="number" min="0" max="4095">
+      </label>
+      <label class="fld">Passcode
+        <input id="passcode" type="number" readonly>
+      </label>
+      <label class="fld">&nbsp;
+        <button id="regenBtn" class="sec">↻ New passcode</button>
+      </label>
+    </div>
+    <div class="row" style="margin-top:6px">
+      <span class="chip" id="vidpid"></span>
+      <span class="sub" id="qrPreview" style="font-family:ui-monospace,monospace;word-break:break-all"></span>
+    </div>
+  </div>
+
+  <!-- 3 · CONNECT + FLASH -->
+  <div class="card">
+    <div class="step">3 · Connect &amp; flash</div>
+    <div class="row">
+      <button id="connectBtn">Select port &amp; connect</button>
+      <button id="disconnectBtn" class="sec hide">Disconnect</button>
+      <label class="fld" style="flex-direction:row;align-items:center;gap:6px;color:var(--fg)">
+        <input type="checkbox" id="provOnly" style="width:auto"> Provision only (skip app — board already flashed)
+      </label>
+    </div>
+    <div class="status" id="connStatus"></div>
+    <div class="row" style="margin-top:10px">
+      <button id="flashBtn" disabled>Flash &amp; provision this device</button>
+    </div>
+    <div class="bar hide" id="barWrap"><i id="bar"></i></div>
+    <div class="status" id="flashStatus"></div>
+    <pre class="log hide" id="log"></pre>
+  </div>
+
+  <!-- 4 · LABEL -->
+  <div class="card" id="labelCard">
+    <div class="step">4 · Label</div>
+    <div class="sub">On a successful flash the label PNG downloads automatically (filename: unit name + serial). Preview:</div>
+    <canvas id="labelPrev" width="600" height="280"></canvas>
+    <div class="row"><button id="relabelBtn" class="sec">Re-download last label</button></div>
+  </div>
+
+  <div class="note info">A factory-fresh C6 shows up as a COM port over its built-in USB. If it doesn't respond, hold <b>BOOT</b> while connecting, then release.</div>
+</div>
+
+<script>/*__QRLIB__*/</script>
+<script>/*__ESPTOOL__*/</script>
+<script>/*__FW__*/</script>
+<script>
+(function(){
+  "use strict";
+  const $ = s => document.querySelector(s);
+  const supported = 'serial' in navigator;
+  if(!supported) $('#unsupported').classList.remove('hide');
+  const hasFSA = typeof window.showSaveFilePicker === 'function';
+
+  const FW = window.FW || {};
+  const TYPES = {
+    light:  { vid:0xFFF1, pid:0x8000, serialPrefix:'PJL-A01-', unit:'PJoshua SmartBulb', chip:'ESP32-C6', fw:'light' },
+    button: { vid:0xFFF1, pid:0x8001, serialPrefix:'PJB-A01-', unit:'PJoshua Button',    chip:'ESP32-C6', fw:'button' },
+  };
+  const FCTRY_ADDR = 0x3e0000, PROV_MAGIC = 0x50524F56;
+
+  // ---------- partition blob ----------
+  function buildFctry(disc, pass, serial){
+    const buf = new Uint8Array(4096);           // zero-filled -> serial NUL-terminated
+    const dv = new DataView(buf.buffer);
+    dv.setUint32(0, PROV_MAGIC >>> 0, true);
+    dv.setUint16(4, 1, true);
+    dv.setUint16(6, disc & 0xFFF, true);
+    dv.setUint32(8, pass >>> 0, true);
+    const enc = new TextEncoder().encode(String(serial).slice(0,32));
+    buf.set(enc, 12);
+    return buf;
+  }
+  const bytesToBin = b => { let s=''; for(let i=0;i<b.length;i++) s+=String.fromCharCode(b[i]); return s; };
+
+  // ---------- Matter QR (MT:) ----------
+  const B38 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-.";
+  function base38(bytes){ const need=[2,4,5]; let out=""; for(let i=0;i<bytes.length;i+=3){ const n=Math.min(3,bytes.length-i); let v=0; for(let j=0;j<n;j++) v+=bytes[i+j]*Math.pow(256,j); for(let c=0;c<need[n-1];c++){ out+=B38[v%38]; v=Math.floor(v/38);} } return out; }
+  function putBits(bits,off,val,n){ for(let i=0;i<n;i++){ if((val>>>i)&1) bits[(off+i)>>3] |= 1<<((off+i)&7); } return off+n; }
+  function matterQR(vid,pid,disc,pass){ const b=new Uint8Array(11); let o=0; o=putBits(b,o,0,3); o=putBits(b,o,vid,16); o=putBits(b,o,pid,16); o=putBits(b,o,0,2); o=putBits(b,o,2,8); o=putBits(b,o,disc&0xFFF,12); o=putBits(b,o,pass,27); o=putBits(b,o,0,4); return "MT:"+base38(b); }
+
+  // ---------- manual pairing code (Verhoeff-checked) ----------
+  const VMUL=[0,1,2,3,4,5,6,7,8,9,1,2,3,4,0,6,7,8,9,5,2,3,4,0,1,7,8,9,5,6,3,4,0,1,2,8,9,5,6,7,4,0,1,2,3,9,5,6,7,8,5,9,8,7,6,0,4,3,2,1,6,5,9,8,7,1,0,4,3,2,7,6,5,9,8,2,1,0,4,3,8,7,6,5,9,3,2,1,0,4,9,8,7,6,5,4,3,2,1,0];
+  const VPERM=[1,5,7,6,2,8,3,0,9,4];
+  function verhoeff(str){ let c=0; const L=str.length; for(let i=1;i<=L;i++){ const v=str.charCodeAt(L-i)-48; let p=v%10; for(let k=0;k<i;k++) p=VPERM[p]; c=VMUL[c*10+p]; } c=(c>0&&c<5)?5-c:c; return String(c); }
+  function manualCode(disc,pass){ const sd=(disc>>8)&0xF; const c1=(sd>>2)&3; const c2=(pass&0x3FFF)|((sd&3)<<14); const c3=(pass>>>14)&0x1FFF; let s=String(c1)+String(c2).padStart(5,'0')+String(c3).padStart(4,'0'); return s+verhoeff(s); }
+  const groupManual = s => s.slice(0,4)+'-'+s.slice(4,8)+'-'+s.slice(8);
+  const fmtPass = p => String(p).padStart(8,'0');
+
+  // ---------- database ----------
+  let db = { version:1, nextDisc:1, devices:[] };
+  let dbHandle = null, lastLabel = null;
+  const LS_KEY = 'matterProvDB';
+
+  function persist(){
+    try{ localStorage.setItem(LS_KEY, JSON.stringify(db)); }catch(e){}
+    if(dbHandle){ writeHandle().catch(e=>console.warn('db write failed', e)); }
+  }
+  async function writeHandle(){ const w=await dbHandle.createWritable(); await w.write(JSON.stringify(db,null,2)); await w.close(); }
+
+  function nextSerial(type){ const p=TYPES[type].serialPrefix; let mx=0; for(const d of db.devices){ if(d.type===type){ const m=/(\d+)$/.exec(d.serial||''); if(m) mx=Math.max(mx,parseInt(m[1],10)); } } return p+String(mx+1).padStart(4,'0'); }
+  function nextDisc(){ let mx=0; for(const d of db.devices) mx=Math.max(mx, d.disc|0); return Math.min(4095, Math.max(db.nextDisc||1, mx+1)); }
+  const BAD_PASS = new Set([0,11111111,22222222,33333333,44444444,55555555,66666666,77777777,88888888,99999999,12345678,87654321,20202021]);
+  function genPass(){ const used=new Set(db.devices.map(d=>d.pass)); let p; do{ p=1+Math.floor(Math.random()*99999997); }while(BAD_PASS.has(p)||used.has(p)); return p; }
+
+  function renderDB(){
+    const has = db.devices.length>0;
+    $('#dbTableWrap').classList.toggle('hide', !has);
+    const tb = $('#dbTable').querySelector('tbody'); tb.innerHTML='';
+    db.devices.slice(-12).reverse().forEach((d,i)=>{
+      const tr=document.createElement('tr');
+      tr.innerHTML = `<td>${db.devices.length-i}</td><td>${esc(d.unit)}</td><td class="mono">${esc(d.serial)}</td><td class="mono">${d.disc}</td><td class="mono">${fmtPass(d.pass)}</td><td class="sub">${(d.ts||'').replace('T',' ').slice(0,16)}</td>`;
+      tb.appendChild(tr);
+    });
+    $('#dbStatus').textContent = (dbHandle? 'File connected · ' : (db.devices.length?'(local cache) · ':'')) + db.devices.length + ' device(s) provisioned';
+  }
+  const esc = s => String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+  // ---------- next-device form ----------
+  function refreshForm(){
+    const type = $('#devType').value, T = TYPES[type];
+    if(!$('#unitName').dataset.touched) $('#unitName').value = T.unit;
+    $('#serial').value = nextSerial(type);
+    if(!$('#disc').dataset.touched) $('#disc').value = nextDisc();
+    if(!$('#passcode').value) $('#passcode').value = genPass();
+    $('#vidpid').textContent = `VID 0x${T.vid.toString(16).toUpperCase()} · PID 0x${T.pid.toString(16).toUpperCase()} · ${T.chip}`;
+    updateQRPreview();
+    revalidate();
+  }
+  function curDev(){
+    const type=$('#devType').value, T=TYPES[type];
+    const disc=Math.max(0,Math.min(4095, parseInt($('#disc').value||'0',10)));
+    const pass=parseInt($('#passcode').value||'0',10);
+    const serial=$('#serial').value, unit=$('#unitName').value||T.unit;
+    return {type, vid:T.vid, pid:T.pid, disc, pass, serial, unit, fw:T.fw,
+            qr:matterQR(T.vid,T.pid,disc,pass), manual:manualCode(disc,pass)};
+  }
+  function updateQRPreview(){ const d=curDev(); $('#qrPreview').textContent = d.qr + '   ·   manual ' + groupManual(d.manual); }
+
+  $('#devType').onchange = ()=>{ $('#unitName').dataset.touched=''; $('#unitName').value=''; $('#disc').dataset.touched=''; $('#disc').value=''; $('#passcode').value=''; refreshForm(); };
+  $('#unitName').oninput = ()=>{ $('#unitName').dataset.touched='1'; };
+  $('#disc').oninput = ()=>{ $('#disc').dataset.touched='1'; updateQRPreview(); };
+  $('#regenBtn').onclick = ()=>{ $('#passcode').value=genPass(); updateQRPreview(); };
+
+  // ---------- label ----------
+  function drawQR(ctx, mt, x, y, size){
+    const qr = qrcode(0,'M'); qr.addData(mt); qr.make();
+    const n = qr.getModuleCount(); const cell = Math.floor(size/(n+8)); const m = Math.floor((size-cell*n)/2);
+    ctx.fillStyle='#fff'; ctx.fillRect(x,y,size,size); ctx.fillStyle='#000';
+    for(let r=0;r<n;r++) for(let c=0;c<n;c++) if(qr.isDark(r,c)) ctx.fillRect(x+m+c*cell, y+m+r*cell, cell, cell);
+  }
+  function renderLabel(dev, canvas){
+    const W=600,H=280; canvas.width=W; canvas.height=H;
+    const ctx=canvas.getContext('2d');
+    ctx.fillStyle='#fff'; ctx.fillRect(0,0,W,H); ctx.fillStyle='#000';
+    ctx.textBaseline='alphabetic';
+    ctx.font='bold 27px system-ui,sans-serif'; ctx.fillText(dev.unit, 22, 46);
+    ctx.font='17px system-ui,sans-serif';
+    ctx.fillText('Serial:  '+dev.serial, 22, 92);
+    ctx.fillText('Passcode:  '+fmtPass(dev.pass), 22, 122);
+    ctx.fillText('Manual:  '+groupManual(dev.manual), 22, 152);
+    ctx.fillStyle='#444'; ctx.font='12px system-ui,sans-serif';
+    ctx.fillText('Discriminator '+dev.disc+'   ·   VID 0x'+dev.vid.toString(16).toUpperCase()+'  PID 0x'+dev.pid.toString(16).toUpperCase(), 22, 186);
+    ctx.fillText('Scan to commission (Matter)', 372, 262);
+    drawQR(ctx, dev.qr, W-230, 26, 210);
+  }
+  function labelName(dev){ return (dev.unit+'_'+dev.serial).replace(/[\\/:*?"<>|]+/g,'-') + '.png'; }
+  function downloadBlob(blob,name){ const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),6000); }
+  function downloadLabel(dev){ renderLabel(dev, $('#labelPrev')); $('#labelPrev').toBlob(b=>{ lastLabel={blob:b,name:labelName(dev)}; downloadBlob(b, labelName(dev)); }, 'image/png'); }
+  $('#relabelBtn').onclick = ()=>{ if(lastLabel) downloadBlob(lastLabel.blob, lastLabel.name); };
+
+  // ---------- esptool connect / flash ----------
+  const logEl=$('#log');
+  function log(s,nl=true){ logEl.classList.remove('hide'); logEl.textContent+=s+(nl?'\n':''); logEl.scrollTop=logEl.scrollHeight; }
+  const terminal={ clean(){logEl.textContent='';}, writeLine(d){log(d);}, write(d){log(d,false);} };
+  const setConn=(h,c='')=>{ $('#connStatus').className='status '+c; $('#connStatus').innerHTML=h; };
+  const setFlash=(h,c='')=>{ $('#flashStatus').className='status '+c; $('#flashStatus').innerHTML=h; };
+  const progress=p=>{ $('#barWrap').classList.remove('hide'); $('#bar').style.width=Math.max(0,Math.min(100,p))+'%'; };
+  let transport=null, esploader=null, detected=null, busy=false;
+
+  function revalidate(){
+    const ready = !!esploader && !busy && db!==null;
+    $('#flashBtn').disabled = !ready;
+  }
+
+  $('#connectBtn').onclick = async ()=>{
+    if(!supported||busy) return;
+    const esptool=window.esptool;
+    if(!esptool||!esptool.ESPLoader){ setConn('Flasher engine failed to load.','err'); return; }
+    try{
+      setConn('Requesting serial port…');
+      const port=await navigator.serial.requestPort();
+      transport=new esptool.Transport(port,false);
+      esploader=new esptool.ESPLoader({transport,baudrate:460800,romBaudrate:115200,terminal});
+      setConn('Connecting &amp; detecting chip…'); logEl.textContent='';
+      await esploader.main();
+      detected=esploader.chip.CHIP_NAME;
+      log('Detected chip: '+detected);
+      $('#connectBtn').classList.add('hide'); $('#disconnectBtn').classList.remove('hide');
+      setConn(`Connected · chip <b>${detected}</b> <span class="ok">&#10003;</span>`,'ok');
+      revalidate();
+    }catch(e){
+      if(e&&e.name==='NotFoundError') setConn('No port selected.');
+      else setConn('Connect failed: '+(e&&e.message?e.message:e),'err');
+      await cleanup();
+    }
+  };
+  $('#disconnectBtn').onclick=()=>{ if(!busy) cleanup(); };
+  async function cleanup(){ try{ if(transport) await transport.disconnect(); }catch(e){} transport=null; esploader=null; detected=null; $('#connectBtn').classList.remove('hide'); $('#disconnectBtn').classList.add('hide'); progress(0); $('#barWrap').classList.add('hide'); revalidate(); }
+
+  $('#flashBtn').onclick = async ()=>{
+    if(!esploader||busy) return;
+    const dev=curDev();
+    if(!dev.pass||dev.pass<1){ setFlash('Passcode invalid — click "New passcode".','err'); return; }
+    if(db.devices.some(d=>d.disc===dev.disc)){ if(!confirm('Discriminator '+dev.disc+' is already in the database. Use it anyway?')) return; }
+    const fwparts = FW[dev.fw] ? FW[dev.fw].parts : null;
+    const provOnly = $('#provOnly').checked;
+    if(!provOnly && !fwparts){ setFlash('Firmware for '+dev.fw+' not embedded in this build.','err'); return; }
+    busy=true; revalidate(); $('#connectBtn').disabled=true; $('#disconnectBtn').disabled=true;
+    try{
+      const fileArray=[];
+      if(!provOnly) for(const p of fwparts) fileArray.push({data:atob(p.b64), address:p.addr});
+      fileArray.push({data:bytesToBin(buildFctry(dev.disc,dev.pass,dev.serial)), address:FCTRY_ADDR});
+      const total=fileArray.reduce((a,x)=>a+x.data.length,0);
+      setFlash((provOnly?'Writing provisioning partition…':'Erasing + writing firmware and provisioning…')); progress(2);
+      await esploader.writeFlash({ fileArray, flashSize:'keep', flashMode:'keep', flashFreq:'keep',
+        eraseAll: !provOnly, compress:true,
+        reportProgress:(i,written,size)=>{ let done=0; for(let k=0;k<i;k++) done+=fileArray[k].data.length; done+=written; progress(done/total*100); setFlash(`Writing… ${(done/1048576).toFixed(2)} / ${(total/1048576).toFixed(2)} MB`); }
+      });
+      progress(100);
+      try{ await esploader.hardReset(); }catch(e){}
+      // record + label + advance
+      db.devices.push({type:dev.type,unit:dev.unit,serial:dev.serial,disc:dev.disc,pass:dev.pass,vid:dev.vid,pid:dev.pid,ts:new Date().toISOString()});
+      db.nextDisc = dev.disc+1;
+      persist(); renderDB();
+      downloadLabel(dev);
+      setFlash(`Provisioned <b>${esc(dev.serial)}</b> — disc ${dev.disc}, passcode ${fmtPass(dev.pass)}. Label downloaded. <span class="ok">&#10003;</span>`,'ok');
+      log('\n✓ '+dev.serial+' provisioned.');
+      // reset form for the next unit
+      $('#unitName').dataset.touched=''; $('#unitName').value=''; $('#disc').dataset.touched=''; $('#disc').value=''; $('#passcode').value=''; refreshForm();
+    }catch(e){
+      setFlash('Flash failed: '+(e&&e.message?e.message:e)+' — unplug/replug and retry.','err');
+      log('\n✗ '+(e&&e.stack?e.stack:e));
+    }finally{
+      busy=false; $('#connectBtn').disabled=false; $('#disconnectBtn').disabled=false; revalidate();
+    }
+  };
+
+  // ---------- database wiring ----------
+  $('#openBtn').onclick = async ()=>{
+    if(hasFSA){ try{ const [h]=await window.showOpenFilePicker({types:[{description:'JSON',accept:{'application/json':['.json']}}]}); dbHandle=h; const f=await h.getFile(); db=JSON.parse(await f.text()); persist(); renderDB(); refreshForm(); }catch(e){ if(e&&e.name!=='AbortError') setConn('Open failed: '+e.message,'err'); } }
+    else { $('#importFile').click(); }
+  };
+  $('#newBtn').onclick = async ()=>{
+    if(hasFSA){ try{ dbHandle=await window.showSaveFilePicker({suggestedName:'matter-devices.json',types:[{description:'JSON',accept:{'application/json':['.json']}}]}); db={version:1,nextDisc:1,devices:[]}; await writeHandle(); persist(); renderDB(); refreshForm(); }catch(e){ if(e&&e.name!=='AbortError') setConn('Create failed: '+e.message,'err'); } }
+    else { db={version:1,nextDisc:1,devices:[]}; persist(); renderDB(); refreshForm(); }
+  };
+  $('#importBtn').onclick = ()=> $('#importFile').click();
+  $('#importFile').onchange = e=>{ const f=e.target.files[0]; if(!f) return; f.text().then(t=>{ db=JSON.parse(t); persist(); renderDB(); refreshForm(); }).catch(err=>setConn('Import failed: '+err.message,'err')); };
+  $('#exportBtn').onclick = ()=> downloadBlob(new Blob([JSON.stringify(db,null,2)],{type:'application/json'}), 'matter-devices.json');
+
+  // ---------- init ----------
+  if(!hasFSA){ $('#importBtn').classList.remove('hide'); $('#exportBtn').classList.remove('hide'); $('#fsaNote').classList.remove('hide'); }
+  try{ const cached=localStorage.getItem(LS_KEY); if(cached) db=JSON.parse(cached); }catch(e){}
+  renderDB(); refreshForm();
+
+  // Debug hook (harmless; local tool) - inspect the generators from the console.
+  window.provDebug = { curDev, buildFctry, matterQR, manualCode, renderLabel, base38, verhoeff, genPass };
+})();
+</script>
+</body>
+</html>

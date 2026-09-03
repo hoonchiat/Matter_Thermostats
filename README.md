@@ -10,6 +10,7 @@ component). Each folder is a standalone ESP-IDF project.
 | `rgb-light/` | ESP32-C6 | Matter Extended Color Light accessory (WS2812) - on/off, brightness, RGB; hold-BOOT-15 s factory reset. |
 | `button/` | ESP32-C6 | Matter Generic Switch accessory - single / double / long press, RGB feedback; hold-BOOT-15 s factory reset. |
 | `flash-tool/` | — | Self-contained browser (Web Serial) flasher with all four firmwares embedded; no toolchain needed. |
+| `provisioning-tool/` | — | Browser provisioning station — writes a unique discriminator/passcode/serial into each Light/Button's `fctry` partition, keeps a device database, and prints a Matter QR label. |
 
 The two accessories share a **hold-BOOT-15 s reset-to-pair gesture**: hold the BOOT
 button - nothing for 10 s, then the LED flashes yellow at a ~1 s interval for 5 s;
