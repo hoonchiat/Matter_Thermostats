@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ESP32 Firmware Flasher — Matter Hub, Portal, Light &amp; Button</title>
+<style>
+  :root{--bg:#0f1420;--card:#1a2233;--card2:#141b29;--line:#2b3650;--fg:#e6ecf5;--mut:#8fa0bd;--acc:#4ea1ff;--on:#37d67a;--bad:#ff6b6b;--warn:#ffcf5c;--rad:12px}
+  *{box-sizing:border-box}
+  body{margin:0;font:15px/1.55 system-ui,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--fg)}
+  .wrap{max-width:780px;margin:0 auto;padding:26px 18px 70px}
+  h1{font-size:23px;margin:0 0 4px}
+  .sub{color:var(--mut);font-size:13px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--rad);padding:18px;margin-top:18px}
+  .step{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--acc);margin-bottom:10px;font-weight:700}
+  .fw{display:flex;gap:12px;flex-wrap:wrap}
+  .fwb{flex:1;min-width:230px;text-align:left;background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:14px;cursor:pointer;color:var(--fg);font:inherit}
+  .fwb.sel{border-color:var(--acc);box-shadow:0 0 0 1px var(--acc) inset}
+  .fwb b{font-size:16px}
+  .fwb .d{color:var(--mut);font-size:12.5px;margin-top:4px}
+  .chip{display:inline-block;font:700 12px/1 ui-monospace,SFMono-Regular,Menlo,monospace;padding:4px 8px;border-radius:6px;background:#26324a;color:var(--acc);margin-top:8px}
+  button.act{font:600 15px/1 inherit;padding:12px 18px;border-radius:9px;border:0;cursor:pointer;background:var(--acc);color:#04213f}
+  button.act:disabled{opacity:.4;cursor:not-allowed}
+  button.sec{background:#26324a;color:var(--fg)}
+  .row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+  .status{margin-top:12px;font-size:14px;min-height:20px}
+  .ok{color:var(--on)} .err{color:var(--bad)} .warnc{color:var(--warn)}
+  .bar{height:10px;background:#26324a;border-radius:6px;overflow:hidden;margin-top:14px}
+  .bar>i{display:block;height:100%;width:0;background:var(--acc);transition:width .18s}
+  pre.log{background:#0a0f18;border:1px solid var(--line);border-radius:8px;padding:10px;font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;max-height:260px;overflow:auto;white-space:pre-wrap;margin-top:12px;color:#cfe0f5}
+  .note{border-radius:8px;padding:10px 12px;font-size:13px;margin-top:14px}
+  .note.warn{background:#241d0f;border:1px solid #5a4a1e;color:var(--warn)}
+  .note.info{background:#0f1b2e;border:1px solid #26324a;color:var(--mut)}
+  .hide{display:none}
+  a{color:var(--acc)}
+  code{font:12.5px ui-monospace,monospace;color:var(--acc)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>ESP32 Firmware Flasher</h1>
+  <div class="sub">Flashes any of the project firmwares — <b>Matter Hub</b> (C6), <b>Gateway Portal</b> (S3), <b>RGB Light</b> (C6) and <b>Button</b> (C6) — over USB, straight from your browser. Firmware is embedded in this file — no downloads, works offline.</div>
+
+  <div id="unsupported" class="note warn hide"><b>Web Serial not available.</b> Open this file in <b>desktop Chrome or Edge</b>. Firefox, Safari, and mobile browsers can't talk to USB serial.</div>
+
+  <div class="card">
+    <div class="step">1 · Choose firmware</div>
+    <div class="fw" id="fwsel"></div>
+  </div>
+
+  <div class="card">
+    <div class="step">2 · Connect &amp; verify chip</div>
+    <div class="sub">Plug the board into USB, click connect, and pick its serial port. I'll read the chip and confirm it matches your choice.</div>
+    <div class="row" style="margin-top:12px">
+      <button class="act" id="connectBtn">Select port &amp; connect</button>
+      <button class="act sec hide" id="disconnectBtn">Disconnect</button>
+    </div>
+    <div class="status" id="connStatus"></div>
+  </div>
+
+  <div class="card">
+    <div class="step">3 · Erase &amp; flash</div>
+    <div class="sub">Full-chip erase, then writes the selected firmware. <b>Don't unplug</b> until it says done.</div>
+    <div class="row" style="margin-top:12px">
+      <button class="act" id="flashBtn" disabled>Erase &amp; Flash</button>
+    </div>
+    <div class="bar hide" id="barWrap"><i id="bar"></i></div>
+    <div class="status" id="flashStatus"></div>
+    <pre class="log hide" id="log"></pre>
+  </div>
+
+  <div class="note info">Tip: a factory-fresh ESP32-C6/S3 connects over its built-in USB (it shows up as a COM port). If the board doesn't respond, hold its <b>BOOT</b> button while connecting, then release.</div>
+</div>
+
+<script>/*__ESPTOOL__*/</script>
+<script>/*__FW__*/</script>
+<script>
+(function(){
+  "use strict";
+  const $ = s => document.querySelector(s);
+  const supported = 'serial' in navigator;
+  if(!supported) $('#unsupported').classList.remove('hide');
+
+  const FW = window.FW || {};
+  let chosen = Object.keys(FW)[0] || 'c6';
+  let transport = null, esploader = null, detected = null, busy = false;
+
+  // ---------- firmware selector ----------
+  const b64bytes = b64 => Math.floor(b64.length * 3 / 4);
+  const fwSize = f => (f.parts.reduce((a,p)=>a+b64bytes(p.b64),0)/1048576).toFixed(2) + ' MB';
+  function renderFw(){
+    $('#fwsel').innerHTML = Object.entries(FW).map(([k,f])=>`
+      <button class="fwb ${k===chosen?'sel':''}" data-k="${k}" ${busy?'disabled':''}>
+        <b>${f.label}</b>
+        <div class="d">${f.desc||''}</div>
+        <span class="chip">${f.chip}</span> &nbsp;<span class="d" style="display:inline">${fwSize(f)}</span>
+      </button>`).join('');
+    $('#fwsel').querySelectorAll('.fwb').forEach(b=>b.onclick=()=>{ if(busy) return; chosen=b.dataset.k; renderFw(); revalidate(); });
+  }
+
+  // ---------- log / status / progress ----------
+  const logEl = $('#log');
+  function log(s, nl=true){ logEl.classList.remove('hide'); logEl.textContent += s + (nl?'\n':''); logEl.scrollTop = logEl.scrollHeight; }
+  const terminal = { clean(){ logEl.textContent=''; }, writeLine(d){ log(d); }, write(d){ log(d,false); } };
+  const setConn  = (html,cls='') => { $('#connStatus').className='status '+cls; $('#connStatus').innerHTML=html; };
+  const setFlash = (html,cls='') => { $('#flashStatus').className='status '+cls; $('#flashStatus').innerHTML=html; };
+  function progress(pct){ $('#barWrap').classList.remove('hide'); $('#bar').style.width = Math.max(0,Math.min(100,pct)) + '%'; }
+
+  function revalidate(){
+    if(!esploader){ $('#flashBtn').disabled = true; return; }
+    if(!detected){ $('#flashBtn').disabled = true; return; }
+    const want = FW[chosen].chip;
+    if(detected === want){
+      setConn(`Connected · chip <b>${detected}</b> — matches ${FW[chosen].label} <span class="ok">&#10003;</span>`, 'ok');
+    } else {
+      setConn(`Connected · chip <b>${detected}</b>, but you chose <b>${FW[chosen].label}</b> (needs ${want}). <span class="warnc">&#9888; Flashing anyway may make the board unbootable.</span>`, 'warnc');
+    }
+    $('#flashBtn').disabled = false;
+  }
+
+  // ---------- connect + detect ----------
+  $('#connectBtn').onclick = async () => {
+    if(!supported || busy) return;
+    const esptool = window.esptool;
+    if(!esptool || !esptool.ESPLoader){ setConn('Flasher engine failed to load.', 'err'); return; }
+    try{
+      setConn('Requesting serial port…');
+      const port = await navigator.serial.requestPort();
+      transport = new esptool.Transport(port, false);
+      esploader = new esptool.ESPLoader({ transport, baudrate: 460800, romBaudrate: 115200, terminal });
+      setConn('Connecting &amp; detecting chip… (the board will reset)');
+      logEl.textContent = '';
+      await esploader.main();
+      detected = esploader.chip.CHIP_NAME;
+      log('Detected chip: ' + detected);
+      $('#connectBtn').classList.add('hide');
+      $('#disconnectBtn').classList.remove('hide');
+      revalidate();
+    }catch(e){
+      if(e && e.name === 'NotFoundError'){ setConn('No port selected.'); }
+      else { setConn('Connect failed: ' + (e && e.message ? e.message : e), 'err'); }
+      await cleanup();
+    }
+  };
+
+  $('#disconnectBtn').onclick = () => { if(!busy) cleanup(); };
+  async function cleanup(){
+    try{ if(transport) await transport.disconnect(); }catch(e){}
+    transport = null; esploader = null; detected = null;
+    $('#connectBtn').classList.remove('hide');
+    $('#disconnectBtn').classList.add('hide');
+    $('#flashBtn').disabled = true;
+    progress(0); $('#barWrap').classList.add('hide');
+  }
+
+  // ---------- flash ----------
+  $('#flashBtn').onclick = async () => {
+    if(!esploader || busy) return;
+    const f = FW[chosen];
+    if(detected && detected !== f.chip){
+      if(!confirm(`The connected chip is ${detected}, but the selected firmware targets ${f.chip}.\n\nFlashing mismatched firmware can make the board unbootable.\n\nProceed anyway?`)) return;
+    }
+    busy = true;
+    $('#flashBtn').disabled = true; $('#connectBtn').disabled = true; $('#disconnectBtn').disabled = true;
+    renderFw();
+    try{
+      const fileArray = f.parts.map(p => ({ data: atob(p.b64), address: p.addr }));
+      const total = fileArray.reduce((a,x)=>a + x.data.length, 0);
+      setFlash('Erasing flash (full chip) — this can take a moment…'); progress(2);
+      await esploader.writeFlash({
+        fileArray,
+        flashSize: 'keep', flashMode: 'keep', flashFreq: 'keep',
+        eraseAll: true, compress: true,
+        reportProgress: (i, written, size) => {
+          let done = 0; for(let k=0;k<i;k++) done += fileArray[k].data.length; done += written;
+          progress(done / total * 100);
+          setFlash(`Writing ${f.label}… ${(done/1048576).toFixed(2)} / ${(total/1048576).toFixed(2)} MB`);
+        }
+      });
+      progress(100);
+      setFlash('Resetting the board…');
+      try{ await esploader.hardReset(); }catch(e){}
+      setFlash(`Done — ${f.label} flashed. The board is rebooting. <span class="ok">&#10003;</span>`, 'ok');
+      log('\n✓ Flash complete.');
+    }catch(e){
+      setFlash('Flash failed: ' + (e && e.message ? e.message : e) + ' — unplug/replug and try again.', 'err');
+      log('\n✗ ' + (e && e.stack ? e.stack : e));
+    }finally{
+      busy = false;
+      $('#connectBtn').disabled = false; $('#disconnectBtn').disabled = false;
+      $('#flashBtn').disabled = false;
+      renderFw();
+    }
+  };
+
+  renderFw();
+})();
+</script>
+</body>
+</html>
