@@ -1,0 +1,490 @@
+<title>Matter Thermostat Guide</title>
+<meta name="description" content="Owner's guide for the ESP32-C6 Matter-over-Thread thermostat, with every OLED screen rendered pixel-for-pixel.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root{
+  --bg:#eef1f4; --surface:#ffffff; --surface-2:#f5f8fa; --raise:#ffffff;
+  --ink:#131a1f; --muted:#586771; --faint:#8a98a1; --line:#dce3e8; --line-2:#e9eef1;
+  --accent:#0e6b74; --accent-ink:#0a5057; --heat:#d9722f; --cool:#268fb4;
+  --oled-bg:#05080b; --oled-px:#bfe9ff; --oled-frame:#1b2228;
+  --shadow:0 1px 2px rgba(19,26,31,.06),0 8px 24px rgba(19,26,31,.06);
+  --radius:14px;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0b0f12; --surface:#141b20; --surface-2:#10161a; --raise:#182027;
+  --ink:#e7edf1; --muted:#98a7b0; --faint:#6d7d86; --line:#242f36; --line-2:#1b242a;
+  --accent:#43b3bc; --accent-ink:#8fe0e6; --heat:#ef9358; --cool:#4dc0e2;
+  --oled-bg:#04070a; --oled-px:#c7ecff; --oled-frame:#0c1216;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 30px rgba(0,0,0,.35);
+}}
+:root[data-theme="dark"]{
+  --bg:#0b0f12; --surface:#141b20; --surface-2:#10161a; --raise:#182027;
+  --ink:#e7edf1; --muted:#98a7b0; --faint:#6d7d86; --line:#242f36; --line-2:#1b242a;
+  --accent:#43b3bc; --accent-ink:#8fe0e6; --heat:#ef9358; --cool:#4dc0e2;
+  --oled-bg:#04070a; --oled-px:#c7ecff; --oled-frame:#0c1216;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 30px rgba(0,0,0,.35);
+}
+
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+body{
+  margin:0;background:var(--bg);color:var(--ink);
+  font-family:"IBM Plex Sans",system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+  font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased;
+}
+h1,h2,h3{font-family:"Archivo","IBM Plex Sans",sans-serif;text-wrap:balance;line-height:1.12;margin:0}
+a{color:var(--accent-ink);text-decoration:none}
+a:hover{text-decoration:underline}
+code,.mono{font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+
+/* ---- shell ---- */
+.wrap{max-width:1140px;margin:0 auto;padding:0 24px}
+.topbar{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 86%,transparent);
+  backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+.topbar .row{display:flex;align-items:center;gap:14px;height:58px}
+.brandmark{width:26px;height:26px;border-radius:7px;flex:none;
+  background:linear-gradient(150deg,var(--accent),var(--cool));position:relative}
+.brandmark::after{content:"";position:absolute;inset:8px 8px auto 8px;height:3px;border-radius:2px;
+  background:rgba(255,255,255,.85);box-shadow:0 6px 0 rgba(255,255,255,.55)}
+.brand{font-family:"Archivo";font-weight:700;letter-spacing:-.01em}
+.brand small{display:block;font-family:"IBM Plex Mono";font-weight:500;font-size:11px;
+  letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.spacer{flex:1}
+.ttoggle{font:600 12px/1 "IBM Plex Mono";letter-spacing:.06em;text-transform:uppercase;
+  color:var(--muted);background:var(--surface);border:1px solid var(--line);border-radius:999px;
+  padding:8px 12px;cursor:pointer}
+.ttoggle:hover{color:var(--ink);border-color:var(--accent)}
+
+/* ---- hero ---- */
+.hero{display:grid;grid-template-columns:1.1fr .9fr;gap:40px;align-items:center;
+  padding:56px 0 40px}
+.eyebrow{font:600 12px/1 "IBM Plex Mono";letter-spacing:.16em;text-transform:uppercase;color:var(--accent-ink)}
+.hero h1{font-size:clamp(34px,5vw,52px);font-weight:800;letter-spacing:-.02em;margin:16px 0 14px}
+.hero p{font-size:18px;color:var(--muted);max-width:46ch;margin:0}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:22px}
+.chip{font:600 12px/1 "IBM Plex Mono";letter-spacing:.03em;padding:7px 11px;border-radius:999px;
+  background:var(--surface);border:1px solid var(--line);color:var(--muted)}
+.hero-screen{justify-self:center}
+
+/* ---- layout with TOC ---- */
+.layout{display:grid;grid-template-columns:210px 1fr;gap:48px;padding:8px 0 80px;align-items:start}
+.toc{position:sticky;top:74px;font-size:14px}
+.toc nav{display:flex;flex-direction:column;gap:2px;border-left:2px solid var(--line);padding-left:2px}
+.toc a{color:var(--muted);padding:6px 12px;border-left:2px solid transparent;margin-left:-4px}
+.toc a:hover{color:var(--ink);text-decoration:none}
+.toc a.active{color:var(--accent-ink);border-left-color:var(--accent);font-weight:600}
+.toc .grp{font:600 11px/1 "IBM Plex Mono";letter-spacing:.12em;text-transform:uppercase;
+  color:var(--faint);padding:14px 12px 6px}
+
+main{min-width:0}
+section{scroll-margin-top:74px;padding:14px 0 30px;border-top:1px solid var(--line-2)}
+section:first-of-type{border-top:0}
+.kicker{font:600 12px/1 "IBM Plex Mono";letter-spacing:.14em;text-transform:uppercase;color:var(--accent-ink)}
+h2{font-size:26px;font-weight:700;letter-spacing:-.01em;margin:10px 0 6px}
+.lead{color:var(--muted);max-width:66ch;margin:0 0 20px}
+p{max-width:68ch}
+h3{font-size:16px;font-weight:600;margin:22px 0 8px}
+
+/* ---- device screen render ---- */
+.screen-fig{margin:0;display:inline-block}
+.screen-frame{background:var(--oled-frame);border:1px solid var(--line);border-radius:16px;
+  padding:14px;box-shadow:var(--shadow);display:inline-block}
+.screen-frame canvas{display:block;width:320px;max-width:100%;height:auto;border-radius:6px;
+  image-rendering:pixelated;background:var(--oled-bg)}
+.hero-screen .screen-frame canvas{width:360px}
+.screen-cap{font:500 12px/1.3 "IBM Plex Mono";letter-spacing:.02em;color:var(--muted);
+  margin-top:10px;text-align:center}
+
+/* screen gallery: render + notes side by side */
+.gallery{display:flex;flex-direction:column;gap:14px;margin-top:18px}
+.gcard{display:grid;grid-template-columns:340px 1fr;gap:26px;align-items:center;
+  background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+  padding:22px;box-shadow:var(--shadow)}
+.gcard .screen-frame{padding:12px}
+.gcard .screen-frame canvas{width:300px}
+.gcard h3{margin:0 0 4px;font-family:"Archivo";font-size:18px;font-weight:700}
+.gtag{font:600 11px/1 "IBM Plex Mono";letter-spacing:.06em;text-transform:uppercase;
+  color:var(--accent-ink);display:inline-block;margin-bottom:8px}
+.gcard ul{margin:8px 0 0;padding-left:0;list-style:none;display:flex;flex-direction:column;gap:7px}
+.gcard li{position:relative;padding-left:20px;color:var(--muted);font-size:14.5px}
+.gcard li::before{content:"";position:absolute;left:2px;top:9px;width:7px;height:7px;border-radius:2px;
+  background:var(--accent);transform:rotate(45deg)}
+.gcard li b{color:var(--ink);font-weight:600}
+
+/* ---- control cards ---- */
+.controls{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:16px}
+.ctl{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+  padding:18px;box-shadow:var(--shadow)}
+.ctl .ic{width:34px;height:34px;border-radius:9px;background:var(--surface-2);border:1px solid var(--line);
+  display:grid;place-items:center;color:var(--accent-ink);margin-bottom:12px}
+.ctl h3{margin:0 0 10px;font-family:"Archivo";font-size:16px}
+.ctl dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:6px 12px;font-size:14px}
+.ctl dt{font-family:"IBM Plex Mono";font-size:12px;color:var(--accent-ink);white-space:nowrap}
+.ctl dd{margin:0;color:var(--muted)}
+
+/* ---- steps ---- */
+.steps{list-style:none;counter-reset:s;margin:16px 0 0;padding:0;display:flex;flex-direction:column;gap:2px}
+.steps li{counter-increment:s;position:relative;padding:14px 0 14px 52px;border-top:1px solid var(--line-2)}
+.steps li:first-child{border-top:0}
+.steps li::before{content:counter(s);position:absolute;left:0;top:12px;width:32px;height:32px;
+  border-radius:9px;background:var(--accent);color:#fff;font:700 15px/32px "Archivo";text-align:center}
+.steps b{font-weight:600}
+
+/* ---- tables ---- */
+.tablewrap{overflow-x:auto;margin-top:14px;border:1px solid var(--line);border-radius:var(--radius)}
+table{border-collapse:collapse;width:100%;font-size:14.5px;background:var(--surface)}
+th,td{text-align:left;padding:11px 16px;border-bottom:1px solid var(--line-2);vertical-align:top}
+thead th{font:600 11px/1.2 "IBM Plex Mono";letter-spacing:.06em;text-transform:uppercase;
+  color:var(--muted);background:var(--surface-2)}
+tbody tr:last-child td{border-bottom:0}
+td .mono,td code{color:var(--accent-ink);font-size:13px}
+.k{font-family:"IBM Plex Mono";font-size:12.5px;color:var(--ink);background:var(--surface-2);
+  border:1px solid var(--line);border-radius:6px;padding:2px 7px;white-space:nowrap}
+
+/* ---- callout ---- */
+.note{display:flex;gap:12px;background:var(--surface-2);border:1px solid var(--line);
+  border-left:3px solid var(--accent);border-radius:10px;padding:14px 16px;margin-top:18px;font-size:14.5px;color:var(--muted)}
+.note b{color:var(--ink)}
+.dot{display:inline-block;width:10px;height:10px;border-radius:50%;vertical-align:middle;margin-right:7px;border:1px solid rgba(0,0,0,.15)}
+
+footer{border-top:1px solid var(--line);padding:26px 0 60px;color:var(--faint);font-size:13px}
+footer .mono{color:var(--muted)}
+
+@media (max-width:900px){
+  .hero{grid-template-columns:1fr;gap:28px;padding:36px 0 28px}
+  .hero-screen{justify-self:start}
+  .layout{grid-template-columns:1fr;gap:0}
+  .toc{display:none}
+  .gcard{grid-template-columns:1fr;gap:18px;justify-items:start}
+  .controls{grid-template-columns:1fr}
+}
+</style>
+
+<header class="topbar"><div class="wrap row">
+  <span class="brandmark" aria-hidden="true"></span>
+  <span class="brand">Matter Thermostat<small>ESP32-C6 · Thread</small></span>
+  <span class="spacer"></span>
+  <button class="ttoggle" id="themeBtn" type="button" aria-label="Toggle colour theme">Theme</button>
+</div></header>
+
+<div class="wrap">
+  <div class="hero">
+    <div>
+      <div class="eyebrow">Owner's Guide</div>
+      <h1>Your thermostat, screen&nbsp;by&nbsp;screen.</h1>
+      <p>A Matter-over-Thread thermostat with a 0.96&Prime; OLED, a rotary dial and a button.
+      Every screen below is rendered pixel-for-pixel from the device firmware.</p>
+      <div class="chips">
+        <span class="chip">Heat · Cool · Auto</span>
+        <span class="chip">Fan Auto/Lo/Med/Hi</span>
+        <span class="chip">Home / Away</span>
+        <span class="chip">°C / °F</span>
+        <span class="chip">Temp + Humidity</span>
+      </div>
+    </div>
+    <figure class="hero-screen screen-fig">
+      <div class="screen-frame"><canvas data-screen="home_sht" data-scale="4"></canvas></div>
+      <figcaption class="screen-cap">Home screen — SHT40 build (temperature + humidity)</figcaption>
+    </figure>
+  </div>
+
+  <div class="layout">
+    <aside class="toc"><nav aria-label="Contents">
+      <span class="grp">Start</span>
+      <a href="#overview">Overview</a>
+      <a href="#controls">Controls</a>
+      <a href="#setup">First-time setup</a>
+      <span class="grp">Screens</span>
+      <a href="#home">Home screen</a>
+      <a href="#adjust">Adjusting</a>
+      <a href="#menu">Settings menu</a>
+      <a href="#pairing">Pairing &amp; code</a>
+      <a href="#fault">Fault</a>
+      <span class="grp">Reference</span>
+      <a href="#everyday">Everyday use</a>
+      <a href="#settings">Settings list</a>
+      <a href="#quickref">Quick reference</a>
+    </nav></aside>
+
+    <main>
+      <section id="overview">
+        <div class="kicker">Overview</div>
+        <h2>What it does</h2>
+        <p class="lead">The thermostat keeps a room at your target temperature and appears in
+        your smart-home app as a standard Matter thermostat over a Thread mesh — no cloud, all
+        local. You can run it entirely from the dial and button, or from Apple&nbsp;Home,
+        Google&nbsp;Home, Alexa, SmartThings or Home&nbsp;Assistant.</p>
+        <p>It supports two room-sensor builds: a <b>10&nbsp;kΩ NTC</b> (temperature only) or an
+        <b>SHT40</b> that also measures <b>relative humidity</b>. On the SHT40 build the humidity
+        is shown on the home screen and published as a Matter humidity sensor.</p>
+      </section>
+
+      <section id="controls">
+        <div class="kicker">Controls</div>
+        <h2>The dial and the button</h2>
+        <p class="lead">Two controls do everything: the rotary dial (turn and press) and the
+        push button. A third button — the recessed <span class="k">BOOT</span> — is used only for
+        a factory reset.</p>
+        <div class="controls">
+          <div class="ctl">
+            <div class="ic" aria-hidden="true">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8"/><path d="M12 12l4-2.2"/></svg>
+            </div>
+            <h3>Rotary dial</h3>
+            <dl>
+              <dt>Turn</dt><dd>Change the target temperature — 0.5° per click.</dd>
+              <dt>Press</dt><dd>Select / confirm. In a menu, change the highlighted item.</dd>
+            </dl>
+          </div>
+          <div class="ctl">
+            <div class="ic" aria-hidden="true">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.4" fill="currentColor" stroke="none"/></svg>
+            </div>
+            <h3>Push button</h3>
+            <dl>
+              <dt>Short</dt><dd>Cycle mode: Off → Heat → Cool → Auto. In a menu, go back.</dd>
+              <dt>Long ≥3s</dt><dd>Open the Settings menu.</dd>
+            </dl>
+          </div>
+          <div class="ctl">
+            <div class="ic" aria-hidden="true">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 4v7"/><path d="M6.3 6.6a8 8 0 1 0 11.4 0"/></svg>
+            </div>
+            <h3>Reset (BOOT)</h3>
+            <dl>
+              <dt>Long ≥5s</dt><dd>Factory reset — removes Matter pairing after an on-screen confirm.</dd>
+            </dl>
+          </div>
+        </div>
+      </section>
+
+      <section id="setup">
+        <div class="kicker">First-time setup</div>
+        <h2>Add it to your smart home</h2>
+        <p class="lead">Out of the box the thermostat shows the <b>Pairing</b> screen and waits to
+        be added. You'll need a <b>Thread border router</b> on your network — an Apple&nbsp;TV&nbsp;4K
+        or HomePod&nbsp;mini, a Google&nbsp;Nest&nbsp;Hub (2nd&nbsp;gen), an eero, or Home&nbsp;Assistant
+        with a Thread radio.</p>
+        <ol class="steps">
+          <li><b>Power it on.</b> The OLED shows a QR code and an 11-digit pairing code.</li>
+          <li><b>Open your smart-home app</b> and choose “Add device / Add Matter accessory”.</li>
+          <li><b>Scan the QR code</b> on the OLED, or type the pairing code shown beside it.</li>
+          <li><b>Wait for it to join Thread.</b> The app pushes your Thread network to the device; it
+          joins the mesh and the home screen appears with a filled link dot.</li>
+          <li><b>Done.</b> Adjust it from the dial or the app — changes sync both ways.</li>
+        </ol>
+        <div class="note"><span>🔒</span><div><b>No border router yet?</b> The thermostat still works
+        as a standalone dial — heating, cooling and fan all run locally. It simply won't appear in
+        your app until a Thread border router is present.</div></div>
+      </section>
+
+      <section id="home">
+        <div class="kicker">Screens</div>
+        <h2>The home screen</h2>
+        <p class="lead">The resting screen shows the room temperature large in the middle, a status
+        bar on top, the target in a rounded pill, and the current action along the bottom. It adapts
+        to the mode, the fan, occupancy, units and whether an SHT40 is fitted.</p>
+        <div class="gallery" id="home-gallery"></div>
+      </section>
+
+      <section id="adjust">
+        <div class="kicker">Screens</div>
+        <h2>Adjusting the temperature</h2>
+        <p class="lead">Turn the dial and the screen switches to the large adjust view. Each click is
+        <b>0.5°</b>; a bar shows where you are within the allowed range. It commits and returns home a
+        few seconds after you stop.</p>
+        <div class="gallery" id="adjust-gallery"></div>
+      </section>
+
+      <section id="menu">
+        <div class="kicker">Screens</div>
+        <h2>The settings menu</h2>
+        <p class="lead">Long-press the button to open Settings. Turn the dial to move the highlight,
+        press the dial to change the highlighted item, short-press the button to go back. The list
+        scrolls, with a scrollbar on the right.</p>
+        <div class="gallery" id="menu-gallery"></div>
+      </section>
+
+      <section id="pairing">
+        <div class="kicker">Screens</div>
+        <h2>Pairing &amp; the Matter code</h2>
+        <p class="lead">Before it's added, the device shows the Pairing screen. After it's added, the
+        same code is always available under <span class="k">Settings → Matter code</span> so you can
+        add it to another home without factory-resetting.</p>
+        <div class="gallery" id="pairing-gallery"></div>
+      </section>
+
+      <section id="fault">
+        <div class="kicker">Screens</div>
+        <h2>Sensor fault</h2>
+        <p class="lead">If the temperature sensor reads open or shorted, the thermostat shows a fault
+        screen and — for safety — switches <b>all heating and cooling off</b> until the sensor
+        recovers. The status LED blinks red.</p>
+        <div class="gallery" id="fault-gallery"></div>
+      </section>
+
+      <section id="everyday">
+        <div class="kicker">Everyday use</div>
+        <h2>Common tasks</h2>
+        <div class="tablewrap"><table>
+          <thead><tr><th>To…</th><th>Do this</th></tr></thead>
+          <tbody>
+            <tr><td>Change the target temperature</td><td>Turn the dial (0.5° per click).</td></tr>
+            <tr><td>Switch mode</td><td>Short-press the button: Off → Heat → Cool → Auto.</td></tr>
+            <tr><td>Set fan speed</td><td>Settings → <span class="k">FAN</span> → press to cycle Auto / Low / Med / High.</td></tr>
+            <tr><td>Set Home / Away</td><td>Settings → <span class="k">PRESENCE</span>. Away uses the setback (unoccupied) setpoints.</td></tr>
+            <tr><td>Switch °C / °F</td><td>Settings → <span class="k">UNITS</span>.</td></tr>
+            <tr><td>Show the pairing code</td><td>Settings → <span class="k">MATTER CODE</span>.</td></tr>
+          </tbody>
+        </table></div>
+        <div class="note"><span>↔</span><div><b>Local and app stay in sync.</b> Mode, both
+        setpoints (Home and Away) and fan speed can be changed from the dial or from your
+        smart-home app; whichever you use, the other updates.</div></div>
+      </section>
+
+      <section id="settings">
+        <div class="kicker">Reference</div>
+        <h2>Settings menu items</h2>
+        <div class="tablewrap"><table>
+          <thead><tr><th>Item</th><th>Choices</th><th>What it does</th></tr></thead>
+          <tbody>
+            <tr><td><span class="k">FAN</span></td><td>Auto · Low · Med · High</td><td>Auto runs the fan only during a heat/cool call; a fixed speed circulates continuously.</td></tr>
+            <tr><td><span class="k">PRESENCE</span></td><td>Home · Away</td><td>Away switches to the unoccupied (setback) setpoints.</td></tr>
+            <tr><td><span class="k">OCC SRC</span></td><td>Manual · Sensor</td><td>Whether Home/Away comes from the toggle or a motion/occupancy sensor.</td></tr>
+            <tr><td><span class="k">UNITS</span></td><td>°C · °F</td><td>Display units. The setpoint step stays 0.5°.</td></tr>
+            <tr><td><span class="k">SENSOR</span></td><td>Type 2/3 · SHT40</td><td>NTC builds pick the thermistor curve; SHT40 is shown read-only.</td></tr>
+            <tr><td><span class="k">MATTER CODE</span></td><td>view</td><td>Shows the manual pairing code full-screen.</td></tr>
+            <tr><td><span class="k">BACK</span></td><td>—</td><td>Return to the home screen.</td></tr>
+          </tbody>
+        </table></div>
+      </section>
+
+      <section id="quickref">
+        <div class="kicker">Reference</div>
+        <h2>Quick reference</h2>
+        <h3>Gestures</h3>
+        <div class="tablewrap"><table>
+          <thead><tr><th>Gesture</th><th>Home</th><th>In a menu</th></tr></thead>
+          <tbody>
+            <tr><td>Dial turn</td><td>Adjust setpoint ±0.5°</td><td>Move highlight</td></tr>
+            <tr><td>Dial press</td><td>Switch active setpoint (Auto)</td><td>Change / open item</td></tr>
+            <tr><td>Button short</td><td>Cycle mode</td><td>Back</td></tr>
+            <tr><td>Button long (3s)</td><td>Open Settings</td><td>Exit to Home</td></tr>
+            <tr><td>BOOT long (5s)</td><td colspan="2">Factory reset (with confirmation)</td></tr>
+          </tbody>
+        </table></div>
+        <h3>Status LED</h3>
+        <div class="tablewrap"><table>
+          <thead><tr><th>Colour</th><th>Meaning</th></tr></thead>
+          <tbody>
+            <tr><td><span class="dot" style="background:#3aa0ff"></span>Blue pulse</td><td>Waiting to be paired</td></tr>
+            <tr><td><span class="dot" style="background:#3aa0ff"></span>Blue blink</td><td>Joining Thread</td></tr>
+            <tr><td><span class="dot" style="background:#37c26a"></span>Dim green</td><td>Connected, idle</td></tr>
+            <tr><td><span class="dot" style="background:#e2601f"></span>Orange</td><td>Calling for heat</td></tr>
+            <tr><td><span class="dot" style="background:#22b6d6"></span>Cyan</td><td>Calling for cool</td></tr>
+            <tr><td><span class="dot" style="background:#e23b3b"></span>Red blink</td><td>Sensor fault</td></tr>
+          </tbody>
+        </table></div>
+      </section>
+
+      <footer>
+        <p>Every screen on this page is rendered from the device's own display code
+        (128&times;64 monochrome OLED). <span class="mono">Matter over Thread · ESP32-C6</span></p>
+      </footer>
+    </main>
+  </div>
+</div>
+
+<script>
+const SCREENS = __SCREEN_DATA__;
+
+const META = {
+  home_gallery: [
+    ["home_heat","Home","Heating call · NTC build","<li><b>HEAT</b> with a ▲ marker in the status bar; a filled dot in the pill means it's actively calling for heat.</li><li>Fan speed shows <b>HI</b> with a spinning fan icon; the link dot is filled (paired).</li><li>Bottom-left reads <b>HEATING</b>. No humidity — this is the NTC (temperature-only) build.</li>"],
+    ["home_sht","Home","Auto · SHT40 with humidity","<li><b>AUTO</b> shows both targets in the pill, each with its ▲/▼ marker.</li><li>Fan is <b>AU</b> (auto) — it runs only when heating or cooling.</li><li>Bottom-right shows <b>relative humidity</b> (e.g. 45%), present only on the SHT40 build.</li>"],
+    ["home_f","Home","Cooling · °F","<li>Units switched to <b>°F</b> — the big temperature and the pill both follow.</li><li><b>COOL</b> with a ▼ marker; the pill's dot shows an active cool call.</li><li>Fan set to <b>MD</b> (medium).</li>"],
+    ["home_away","Home","Away (setback)","<li>An <b>AWAY</b> badge appears bottom-right; the <b>unoccupied setpoints</b> are now in effect.</li><li>Set Away from Settings → Presence, or automatically from an occupancy sensor.</li><li>Returning to Home restores your comfort setpoints.</li>"],
+  ],
+  adjust_gallery: [
+    ["adjust","Adjust","Turning the dial","<li>The target enlarges so you can see it while turning.</li><li>Each click is <b>0.5°</b>; the bar shows the position within the allowed range.</li><li>While Away, this edits the Away setpoint and the label reads <b>AWAY HEAT/COOL</b>.</li>"],
+  ],
+  menu_gallery: [
+    ["menu_top","Settings","Top of the list","<li>Open with a <b>long button press</b>. The highlighted row is inverted.</li><li>Turn the dial to move; <b>press</b> the dial to change the highlighted item.</li><li>A scrollbar on the right appears when the list is longer than the screen.</li>"],
+    ["menu_scroll","Settings","Scrolled down","<li>The list keeps the selection centred as you scroll.</li><li><b>SENSOR</b> shows the NTC curve to toggle, or <b>SHT40</b> read-only on that build.</li><li>Short-press the button to go back to Home.</li>"],
+  ],
+  pairing_gallery: [
+    ["pairing","Pairing","Before it's added","<li>Shown automatically until the thermostat is added to a home.</li><li>Scan the <b>QR</b> or type the code; needs a Thread border router on the network.</li><li>Settings stay reachable so you can set units or sensor type before pairing.</li>"],
+    ["info","Matter code","Settings → Matter code","<li>The 11-digit <b>manual pairing code</b>, shown large.</li><li>Use it to add the thermostat to another home without a factory reset.</li><li>Available whether or not it's already paired.</li>"],
+  ],
+  fault_gallery: [
+    ["fault","Fault","Open / short sensor","<li>Shown when the temperature sensor reads open or shorted.</li><li>All heating and cooling are switched <b>off</b> for safety.</li><li>The status LED blinks red; the screen clears once the sensor recovers.</li>"],
+  ],
+};
+
+function fbBytes(b64){
+  const bin = atob(b64), a = new Uint8Array(bin.length);
+  for (let i=0;i<bin.length;i++) a[i] = bin.charCodeAt(i);
+  return a;
+}
+function px(v){ return getComputedStyle(document.documentElement).getPropertyValue(v).trim(); }
+function draw(canvas){
+  const id = canvas.dataset.screen, data = SCREENS[id];
+  if (!data) return;
+  const W=128, H=64, S=parseInt(canvas.dataset.scale||"4",10);
+  canvas.width = W*S; canvas.height = H*S;
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = px("--oled-bg") || "#05080b";
+  ctx.fillRect(0,0,W*S,H*S);
+  const fb = fbBytes(data);
+  ctx.fillStyle = px("--oled-px") || "#bfe9ff";
+  for (let y=0;y<H;y++) for (let x=0;x<W;x++){
+    if ((fb[(y>>3)*W + x] >> (y&7)) & 1) ctx.fillRect(x*S, y*S, S, S);
+  }
+}
+function drawAll(){ document.querySelectorAll("canvas[data-screen]").forEach(draw); }
+
+/* Build the galleries from META. */
+for (const [gid, rows] of Object.entries(META)){
+  const host = document.getElementById(gid);
+  if (!host) continue;
+  for (const [id, name, tag, bullets] of rows){
+    const card = document.createElement("div");
+    card.className = "gcard";
+    card.innerHTML =
+      '<figure class="screen-fig"><div class="screen-frame">'
+      + '<canvas data-screen="'+id+'" data-scale="4"></canvas></div></figure>'
+      + '<div><span class="gtag">'+tag+'</span><h3>'+name+'</h3><ul>'+bullets+'</ul></div>';
+    host.appendChild(card);
+  }
+}
+
+drawAll();
+
+/* Theme toggle (remembered per viewer). */
+const root = document.documentElement, btn = document.getElementById("themeBtn");
+try { const t = localStorage.getItem("thermo-guide-theme"); if (t) root.setAttribute("data-theme", t); } catch(e){}
+btn.addEventListener("click", () => {
+  const dark = getComputedStyle(root).getPropertyValue("--oled-bg").trim() !== "" &&
+    (root.getAttribute("data-theme") === "dark" ||
+     (!root.getAttribute("data-theme") && matchMedia("(prefers-color-scheme: dark)").matches));
+  const next = dark ? "light" : "dark";
+  root.setAttribute("data-theme", next);
+  try { localStorage.setItem("thermo-guide-theme", next); } catch(e){}
+  drawAll();
+});
+
+/* TOC active-section highlight. */
+const links = [...document.querySelectorAll(".toc a")];
+const byId = Object.fromEntries(links.map(a => [a.getAttribute("href").slice(1), a]));
+const obs = new IntersectionObserver(es => {
+  es.forEach(e => { if (e.isIntersecting){
+    links.forEach(l => l.classList.remove("active"));
+    (byId[e.target.id] || {}).classList?.add("active");
+  }});
+}, { rootMargin: "-40% 0px -55% 0px" });
+document.querySelectorAll("main section[id]").forEach(s => obs.observe(s));
+</script>

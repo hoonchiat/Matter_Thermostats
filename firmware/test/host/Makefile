@@ -44,5 +44,10 @@ test_sht4x: test_sht4x.c ../../components/sht4x/sht4x_logic.c
 test_ui: test_ui.c ../../components/ui_oled/ui_oled.c ../../components/ui_oled/font5x7.inc
 	$(CC) -DUI_OLED_HOST $(CFLAGS) -I../../components/ui_oled/include test_ui.c -o $@ $(LDLIBS)
 
+# Emit every OLED screen's framebuffer as base64 JSON (feeds the user guide).
+render_screens: render_screens.c ../../components/ui_oled/ui_oled.c ../../components/ui_oled/font5x7.inc
+	$(CC) -DUI_OLED_HOST $(CFLAGS) -I../../components/ui_oled/include render_screens.c -o $@ $(LDLIBS)
+
 clean:
-	rm -f test_thermistor test_thermostat_core test_occupancy test_sht4x test_ui preview_ui
+	rm -f test_thermistor test_thermostat_core test_occupancy test_sht4x test_ui \
+	      render_screens preview_ui

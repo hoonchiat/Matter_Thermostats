@@ -24,6 +24,7 @@ firmware/test/host/test_occupancy
 firmware/test/host/test_sht4x
 firmware/test/host/test_ui
 firmware/test/host/preview_ui
+firmware/test/host/render_screens
 
 # Logs / local
 *.log
