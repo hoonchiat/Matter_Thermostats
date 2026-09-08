@@ -41,6 +41,27 @@ menu "Matter Thermostat"
             int "Relay O/B (reversing valve) GPIO"
             default 21
 
+        config THERMO_PIN_FAN_LOW
+            int "Multi-speed blower LOW tap GPIO (-1 = not used)"
+            default -1
+            help
+                Optional. For a single-speed fan leave the three fan-tap pins at
+                -1 and use only the G relay; the selected speed then just means
+                fan on. Set these to drive a multi-speed blower (one-hot taps).
+        config THERMO_PIN_FAN_MED
+            int "Multi-speed blower MED tap GPIO (-1 = not used)"
+            default -1
+        config THERMO_PIN_FAN_HIGH
+            int "Multi-speed blower HIGH tap GPIO (-1 = not used)"
+            default -1
+
+        config THERMO_PIN_OCCUPANCY
+            int "Occupancy / PIR sensor GPIO (-1 = not used)"
+            default -1
+            help
+                Optional. A motion/occupancy sensor input. Leave at -1 to use the
+                manual Home/Away toggle in the settings menu instead.
+
         config THERMO_PIN_STATUS_LED
             int "Status RGB LED (WS2812) GPIO"
             default 8
@@ -105,6 +126,43 @@ menu "Matter Thermostat"
         config THERMO_AUTO_MIN_DEADZONE_C10
             int "Auto-mode minimum heat/cool gap (0.1 C units)"
             default 20
+
+        config THERMO_FAN_CALL_SPEED
+            int "Fan speed during a heat/cool call (1=low,2=med,3=high)"
+            default 3
+            range 1 3
+    endmenu
+
+    menu "Occupancy (Home / Away)"
+        choice THERMO_OCC_SOURCE
+            prompt "Default occupancy source"
+            default THERMO_OCC_SOURCE_MANUAL
+            config THERMO_OCC_SOURCE_MANUAL
+                bool "Manual Home/Away toggle"
+            config THERMO_OCC_SOURCE_SENSOR
+                bool "Occupancy / PIR sensor"
+        endchoice
+
+        config THERMO_OCC_VACANCY_TIMEOUT_S
+            int "Vacancy timeout — no motion before Away (s)"
+            default 900
+
+        config THERMO_OCC_SENSOR_ACTIVE_HIGH
+            bool "Occupancy sensor is active-high (motion drives pin high)"
+            default y
+
+        config THERMO_DEFAULT_UNOCC_HEAT_SET_C10
+            int "Default UNOCCUPIED heating setpoint (0.1 C units)"
+            default 170
+            help
+                Matter OCC feature UnoccupiedHeatingSetpoint. Default 17.0 C
+                (a setback below the occupied heating setpoint).
+        config THERMO_DEFAULT_UNOCC_COOL_SET_C10
+            int "Default UNOCCUPIED cooling setpoint (0.1 C units)"
+            default 290
+            help
+                Matter OCC feature UnoccupiedCoolingSetpoint. Default 29.0 C
+                (a setback above the occupied cooling setpoint).
     endmenu
 
     menu "UI"

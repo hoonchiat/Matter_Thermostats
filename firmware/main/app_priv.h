@@ -30,7 +30,15 @@ typedef struct {
     int  min_on_s;
     int  hp_reversing;      /* thermo_hp_mode_t                  */
     int  brightness;        /* 0..255                            */
+    int  fan_speed;         /* thermo_fan_speed_t: 0=auto,1=low,2=med,3=high */
+    int  occ_source;        /* occ_source_t: 0=manual, 1=sensor  */
+    bool occ_manual_home;   /* manual Home(true)/Away(false) pref */
+    int  unocc_heat_c100;   /* Unoccupied heating setpoint, 0.01 C (Matter OCC) */
+    int  unocc_cool_c100;   /* Unoccupied cooling setpoint, 0.01 C (Matter OCC) */
 } app_config_t;
+
+/* Occupancy source. */
+typedef enum { OCC_SRC_MANUAL = 0, OCC_SRC_SENSOR = 1 } occ_source_t;
 
 /* ---- live application state (single source of truth) ---------------------- */
 typedef struct {
@@ -42,12 +50,14 @@ typedef struct {
     bool calling_heat;
     bool calling_cool;
     bool fan_on;
+    bool occupied;          /* resolved live Home(true)/Away(false) */
 
     bool commissioned;      /* Matter commissioned onto a fabric */
     int  thread_rssi;
 
     int  screen;            /* ui_screen_t                       */
     int  active_setpoint;   /* 0 = heat, 1 = cool                */
+    int  menu_index;        /* highlighted settings-menu row     */
 } app_state_t;
 
 /* ---- inter-task events ---------------------------------------------------- */
@@ -59,9 +69,12 @@ typedef enum {
     EVT_ENC_SW_LONG,        /* encoder switch, long              */
     EVT_RESET_LONG,         /* BOOT button long → factory reset  */
     EVT_MATTER_SET_MODE,    /* value = thermo_mode_t             */
-    EVT_MATTER_SET_HEAT,    /* value = 0.01 C                    */
-    EVT_MATTER_SET_COOL,    /* value = 0.01 C                    */
+    EVT_MATTER_SET_HEAT,    /* value = 0.01 C (occupied heat)    */
+    EVT_MATTER_SET_COOL,    /* value = 0.01 C (occupied cool)    */
+    EVT_MATTER_SET_UNOCC_HEAT, /* value = 0.01 C (unoccupied heat) */
+    EVT_MATTER_SET_UNOCC_COOL, /* value = 0.01 C (unoccupied cool) */
     EVT_MATTER_SET_UNITS,   /* value = 0/1 (C/F)                 */
+    EVT_MATTER_SET_FAN,     /* value = thermo_fan_speed_t (0..3) */
     EVT_MATTER_COMMISSIONED,/* value = 0/1                       */
 } app_event_type_t;
 
@@ -90,7 +103,11 @@ int  app_matter_start(void);               /* create endpoints + start stack */
 void app_matter_report_temperature(int temp_c100, bool fault);
 void app_matter_report_running_state(bool heat, bool cool, bool fan);
 void app_matter_report_setpoints(int heat_c100, int cool_c100);
+void app_matter_report_unocc_setpoints(int heat_c100, int cool_c100);
 void app_matter_report_mode(int mode);
+void app_matter_report_units(bool fahrenheit);   /* TemperatureDisplayMode */
+void app_matter_report_fan(int fan_speed);       /* Fan Control FanMode */
+void app_matter_report_occupancy(bool occupied); /* Occupancy Sensing */
 void app_matter_factory_reset(void);
 void app_matter_get_pairing_code(char *out, int out_len);
 

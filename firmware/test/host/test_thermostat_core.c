@@ -95,6 +95,41 @@ int main(void)
         CHECK(o.w_heat && !o.y_cool, "auto heats when cold, not cool");
     }
 
+    /* --- Fan speed --- */
+    {
+        thermo_state_t st; thermo_core_init(&st, 0);
+        thermo_input_t in = base();
+        /* Idle in HEAT with fan AUTO and temp satisfied => fan off. */
+        in.mode = THERMO_MODE_HEAT; in.temp_c = 25.0f; in.fan_speed = THERMO_FAN_AUTO;
+        thermo_output_t o = thermo_core_step(&cfg, &in, &st);
+        CHECK(o.fan_level == 0 && !o.g_fan, "auto fan off when idle");
+
+        /* Fixed LOW circulates even when idle. */
+        in.fan_speed = THERMO_FAN_LOW;
+        o = thermo_core_step(&cfg, &in, &st);
+        CHECK(o.fan_level == THERMO_FAN_LOW && o.g_fan, "fixed low circulates when idle");
+
+        /* Heating call runs fan at the call speed (HIGH by default). */
+        in.temp_c = 18.0f; in.fan_speed = THERMO_FAN_AUTO;
+        o = thermo_core_step(&cfg, &in, &st);
+        CHECK(o.w_heat && o.fan_level == THERMO_FAN_HIGH, "call runs fan at call speed");
+
+        /* OFF mode with fixed MED still circulates; AUTO idles. */
+        thermo_state_t st2; thermo_core_init(&st2, 0);
+        thermo_input_t off = base(); off.mode = THERMO_MODE_OFF;
+        off.fan_speed = THERMO_FAN_MED;
+        o = thermo_core_step(&cfg, &off, &st2);
+        CHECK(o.fan_level == THERMO_FAN_MED && !o.w_heat && !o.y_cool, "OFF + fixed med circulates");
+        off.fan_speed = THERMO_FAN_AUTO;
+        o = thermo_core_step(&cfg, &off, &st2);
+        CHECK(o.fan_level == 0, "OFF + auto fan idles");
+
+        /* Fault forces fan off regardless of fixed speed. */
+        thermo_input_t f = base(); f.fan_speed = THERMO_FAN_HIGH; f.fault = true;
+        o = thermo_core_step(&cfg, &f, &st2);
+        CHECK(o.fan_level == 0 && !o.g_fan, "fault forces fan off");
+    }
+
     /* --- Startup lockout blocks the first compressor call --- */
     {
         thermo_state_t st; thermo_core_init(&st, 0);

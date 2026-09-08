@@ -111,6 +111,10 @@ See [FIRMWARE.md](FIRMWARE.md) for tasks, queues, and the control algorithm, and
 | FR-10 | Show the Matter commissioning QR/pairing code on the OLED while uncommissioned. |
 | FR-11 | Apply a user temperature-**calibration offset** (± a few °C) to correct sensor placement error. |
 | FR-12 | Fail safe: on sensor fault (open/short) or lost logic power, drive all HVAC relays **de-energized (off)** and indicate a fault. |
+| FR-13 | Provide **fan speed** control — Auto / Low / Med / High — adjustable locally (settings menu) and remotely (Matter Fan Control cluster). Auto runs the fan with the call; a fixed speed circulates continuously. |
+| FR-14 | Allow **remote override** from Matter of System Mode, heating/cooling setpoints, and fan speed; local and remote state stay synchronized and overrides persist. |
+| FR-15 | Present a modern, legible OLED UI (status bar with mode/fan/link indicators, large temperature, setpoint pill), taking cues from the Honeywell Home thermostats. |
+| FR-16 | Support **occupancy** via a PIR/occupancy sensor (with a vacancy timeout) **or** a manual Home/Away toggle (selectable). Use the Matter Thermostat **OCC feature** with separate **unoccupied setpoints** (writable remotely and locally); publish the resolved presence via the `Occupancy` attribute and an Occupancy Sensor endpoint. |
 
 ## 5. Non-functional requirements
 
@@ -177,9 +181,14 @@ Implemented in `components/thermostat_core` (pure, unit-testable). Summary:
   de-energize at `T ≤ coolSet − deadband/2`.
 - **Auto:** honor both setpoints with an enforced **minimum dead-zone** between heat and
   cool setpoints to prevent fighting.
-- **Fan (G):** on during any active call; also on continuously in Fan-Only or when the
-  Matter fan mode requests it.
+- **Fan (G):** speed is Auto/Low/Med/High. Auto runs the fan at the configured call speed
+  while heating/cooling; Low/Med/High circulate continuously at that level. Single-`G`
+  installs treat any non-Auto speed as on; multi-tap blowers energize one of
+  `G_LOW/G_MED/G_HIGH`.
 - **Reversing valve (O·B):** driven per heat-pump config in Cool (O) or Heat (B).
+- **Occupancy (Home/Away):** from a PIR sensor (with vacancy timeout) or a manual toggle.
+  Uses the Matter **OCC feature** — separate occupied and **unoccupied** setpoints; the
+  control law runs on whichever set matches the current presence.
 - **Protection:** min-on / min-off timers, especially compressor min-off (anti
   short-cycle); startup lockout after power-up.
 
@@ -191,14 +200,21 @@ Full state table and pseudocode in [FIRMWARE.md §Control](FIRMWARE.md#control-a
   Commissioning, OTA Requestor, etc.
 - **Endpoint 1** — Thermostat (`0x0301`):
   - `Identify` (0x0003)
-  - `Thermostat` (0x0201) — features **HEAT | COOL | AUTO**; attributes `LocalTemperature`,
-    `OccupiedHeatingSetpoint`, `OccupiedCoolingSetpoint`, `SystemMode`,
+  - `Thermostat` (0x0201) — features **HEAT | COOL | AUTO | OCC**; attributes
+    `LocalTemperature`, `Occupancy`, `OccupiedHeatingSetpoint`, `OccupiedCoolingSetpoint`,
+    `UnoccupiedHeatingSetpoint`, `UnoccupiedCoolingSetpoint`, `SystemMode`,
     `ControlSequenceOfOperation`, setpoint limits, `ThermostatRunningState`.
   - `Thermostat User Interface Configuration` (0x0204) — `TemperatureDisplayMode`,
     `KeypadLockout`.
+- **Endpoint 2** — Fan (`0x002B`):
+  - `Fan Control` (0x0202) — `FanMode` (Off/Low/Med/High/Auto), `FanModeSequence`,
+    `PercentSetting` — the fan speed, viewable and overridable from Matter.
+- **Endpoint 3** — Occupancy Sensor (`0x0107`):
+  - `Occupancy Sensing` (0x0406) — `Occupancy` bit reflecting the resolved Home/Away state.
 
-Full attribute/command list, ranges, and the local↔Matter synchronization rules are in
-[MATTER.md](MATTER.md).
+All three of System Mode, setpoints, and fan speed can be **overridden remotely** and stay
+in sync with the local UI. Full attribute/command list, ranges, and the local↔Matter
+synchronization rules are in [MATTER.md](MATTER.md).
 
 ## 10. Commissioning & networking
 
@@ -211,8 +227,9 @@ Full attribute/command list, ranges, and the local↔Matter synchronization rule
 ## 11. Persistence
 
 NVS namespace `thermo_cfg` stores: `sysMode`, `heatSet`, `coolSet`, `deadband`,
-`tempOffset`, `units`, `ntcType`, `minOff`, `minOn`, `hpReversing`, `brightness`. Matter's
-own fabric/credential storage is separate (managed by the stack).
+`tempOffset`, `units`, `ntcType`, `minOff`, `minOn`, `hpReversing`, `brightness`, `fan`
+(fan speed), `occSrc`/`occHome` (occupancy source + manual Home/Away), and `uHeat`/`uCool`
+(unoccupied setpoints). Matter's own fabric/credential storage is separate (managed by the stack).
 
 ## 12. Bill of materials
 

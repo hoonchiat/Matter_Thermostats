@@ -9,13 +9,22 @@ LDLIBS  ?= -lm
 
 THERM_INC := -I../../components/thermistor/include
 CORE_INC  := -I../../components/thermostat_core/include
+OCC_INC   := -I../../components/occupancy/include
 
-.PHONY: all test clean
+.PHONY: all test clean preview
 all: test
 
-test: test_thermistor test_thermostat_core
+test: test_thermistor test_thermostat_core test_occupancy
 	@echo "=== thermistor ===";      ./test_thermistor
 	@echo "=== thermostat_core ==="; ./test_thermostat_core
+	@echo "=== occupancy ===";       ./test_occupancy
+
+# Render the OLED screens to the terminal as ASCII (no hardware needed).
+preview: preview_ui
+	./preview_ui
+
+preview_ui: preview_ui.c ../../components/ui_oled/ui_oled.c ../../components/ui_oled/font5x7.inc
+	$(CC) -DUI_OLED_HOST $(CFLAGS) -I../../components/ui_oled/include preview_ui.c -o preview_ui $(LDLIBS)
 
 test_thermistor: test_thermistor.c ../../components/thermistor/ntc_curves.c
 	$(CC) $(CFLAGS) $(THERM_INC) $^ -o $@ $(LDLIBS)
@@ -23,5 +32,8 @@ test_thermistor: test_thermistor.c ../../components/thermistor/ntc_curves.c
 test_thermostat_core: test_thermostat_core.c ../../components/thermostat_core/thermostat_core.c
 	$(CC) $(CFLAGS) $(CORE_INC) $^ -o $@ $(LDLIBS)
 
+test_occupancy: test_occupancy.c ../../components/occupancy/occupancy_logic.c
+	$(CC) $(CFLAGS) $(OCC_INC) $^ -o $@ $(LDLIBS)
+
 clean:
-	rm -f test_thermistor test_thermostat_core
+	rm -f test_thermistor test_thermostat_core test_occupancy preview_ui

@@ -8,8 +8,12 @@ ENC_SW,2,GPIO_ISR,in,encoder push switch; internal pull-up; select
 BTN_PUSH,3,GPIO_ISR,in,dedicated push button; internal pull-up; mode/back
 RELAY_W_HEAT,18,GPIO,out,heat call; active-high to driver
 RELAY_Y_COOL,19,GPIO,out,cool/compressor call; active-high to driver
-RELAY_G_FAN,20,GPIO,out,fan call; active-high to driver
+RELAY_G_FAN,20,GPIO,out,fan enable (any speed>0); active-high to driver
 RELAY_OB_REV,21,GPIO,out,reversing valve (heat pump); active-high to driver
+FAN_TAP_LOW,-1,GPIO,out,optional multi-speed blower LOW tap (one-hot); -1=unused
+FAN_TAP_MED,-1,GPIO,out,optional multi-speed blower MED tap (one-hot); -1=unused
+FAN_TAP_HIGH,-1,GPIO,out,optional multi-speed blower HIGH tap (one-hot); -1=unused
+OCCUPANCY,-1,GPIO,in,optional PIR/occupancy motion input; -1=manual Home/Away only
 STATUS_LED,8,RMT,out,WS2812 RGB status (strapping pin; LED only)
 BTN_RESET,9,GPIO,in,BOOT button reused for factory reset (strapping; pulled-up)
 CONSOLE_TX,16,UART0,out,debug console; keep free

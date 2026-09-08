@@ -21,8 +21,9 @@ firmware/
     ├── rotary_encoder/       # PCNT quadrature + switch          [implemented]
     ├── button/               # debounce + short/long press       [implemented]
     ├── thermostat_core/      # mode/hysteresis/cycle-timer law    [implemented, pure]
-    ├── relays/               # 4-ch HVAC output driver           [implemented]
-    └── ui_oled/              # SSD1306 screen state machine       [scaffold]
+    ├── relays/               # HVAC output driver + fan taps      [implemented]
+    ├── occupancy/            # PIR + vacancy timeout / Home-Away  [implemented]
+    └── ui_oled/              # SSD1306 screens + 5x7 font + menu   [implemented]
 ```
 
 **Design principle:** the *decision-making* logic (`thermostat_core`) is a pure state
@@ -97,8 +98,23 @@ AUTO:                enforce coolSet - heatSet >= min_deadzone (default 2°C);
 FAN_ONLY:            G on, W/Y off.
 ```
 
-Fan (G): on whenever W or Y is on, or in FAN_ONLY, or when Matter fan mode = On.
+Fan speed (Auto/Low/Med/High) → an output `fan_level` (0..3):
+```
+fan_level = (heating || cooling) ? fan_call_speed : 0   // AUTO follows the call
+if (fan_speed is LOW/MED/HIGH) fan_level = max(fan_level, fan_speed)  // continuous circulate
+OFF mode: fan_level = fixed speed (0 if AUTO);  FAN_ONLY: fixed speed or call speed;  fault: 0
+```
+`G` = `fan_level > 0` (fan enable). Optional `G_LOW/G_MED/G_HIGH` taps are driven one-hot
+from `fan_level` for a multi-speed blower.
 Reversing valve (O·B): heat-pump config maps a cool call → O (or heat call → B).
+
+Occupancy (Home/Away): before the control step, `control_task` resolves occupancy —
+`occupancy_poll()` (PIR + vacancy timeout) when the source is Sensor and one is wired,
+else the manual toggle. It then feeds the **occupied** setpoints when Home and the
+**unoccupied** setpoints when Away (Matter OCC feature) into the core — two independent
+sets, both writable from Matter and editable locally (ADJUST edits whichever is in
+effect). The resolved state is published via the thermostat `Occupancy` attribute and the
+Occupancy Sensing endpoint.
 
 ### 3.2 Compressor / cycle protection (safety, NFR-4)
 
@@ -168,13 +184,19 @@ Fault). See [UI.md](UI.md).
 
 ## 5. Matter integration (glue)
 
-`app_matter.cpp` creates endpoints/clusters and registers callbacks:
+`app_matter.cpp` creates the endpoints/clusters and registers callbacks:
 
-- **Attribute update callback** (remote write, `PRE_UPDATE`/`POST_UPDATE`): translate
-  `SystemMode`, `OccupiedHeatingSetpoint`, `OccupiedCoolingSetpoint`,
-  `TemperatureDisplayMode` writes → `app_event`s → update `app_state` → re-run control.
-- **Local → Matter:** when the encoder/button change a setpoint or mode, call
-  `esp_matter::attribute::update()` so controllers see the change.
+- **Endpoints:** Root (0), Thermostat 0x0301 (1), Fan 0x002B (2, Fan Control), and
+  Occupancy Sensor 0x0107 (3, Occupancy Sensing).
+- **Attribute update callback** (remote write, `PRE_UPDATE`): translate `SystemMode`,
+  `OccupiedHeatingSetpoint`, `OccupiedCoolingSetpoint`, `TemperatureDisplayMode`, and
+  `FanControl::FanMode`/`PercentSetting` writes → `app_event`s → update `app_state` →
+  re-run control. This is the **remote override** path for mode, setpoints and fan speed.
+- **Local → Matter:** when the encoder/button/menu change a setpoint, mode, units, or fan
+  speed, call `esp_matter::attribute::update()` so controllers see the change (bidirectional).
+- **Pairing:** mirrors the esp-matter `light` example — `esp_matter::start(app_event_cb)`,
+  `PrintOnboardingCodes(BLE)`, and re-open a DNS-SD commissioning window on last-fabric
+  removal.
 - **Identify:** blink the status LED.
 - Temperatures cross the boundary in Matter's units: **0.01 °C signed int16** for
   `LocalTemperature` and the setpoints.
@@ -212,10 +234,14 @@ OTA A/B + NVS). See `firmware/sdkconfig.defaults` and `firmware/sdkconfig.defaul
 
 ## 8. Testing strategy
 
-- **Host unit tests** for `thermistor` (R→T against known points) and `thermostat_core`
-  (hysteresis boundaries, min-off/min-on gating, auto dead-zone, fail-safe). These
-  components are pure C with no ESP dependency, so they compile and run on a PC — see
-  `tools/` and the notes in each component's README.
+- **Host unit tests** for `thermistor` (R→T against known points), `thermostat_core`
+  (hysteresis boundaries, min-off/min-on gating, auto dead-zone, fan-speed levels,
+  fail-safe), and `occupancy` (vacancy-timeout boundaries, clock-anomaly fail-safe). These
+  components are pure C with no ESP dependency, so they compile and run on a PC:
+  `cd firmware/test/host && make`.
+- **Host UI preview:** `make preview` renders every OLED screen to the terminal as ASCII
+  (the `ui_oled` drawing path compiles under `UI_OLED_HOST`), so layouts are verifiable
+  without hardware.
 - **On-target smoke:** verify ADC↔temp with a reference thermometer; encoder count
   stability; relay actuation with an LED load before wiring 24 VAC; commissioning against a
   real Border Router + controller.

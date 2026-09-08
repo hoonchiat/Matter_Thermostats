@@ -15,6 +15,7 @@
 #include "rotary_encoder.h"
 #include "button.h"
 #include "relays.h"
+#include "occupancy.h"
 
 #define TAG "app_control"
 
@@ -29,6 +30,38 @@ enum { BTN_ID_PUSH = 1, BTN_ID_ENC_SW = 2, BTN_ID_RESET = 3 };
 
 static QueueHandle_t s_btn_q;      /* button_event_t from the button component */
 static int64_t s_last_adjust_ms;   /* for ADJUST auto-timeout                  */
+
+/* Settings-menu items (order = on-screen order). */
+enum {
+    MENU_FAN = 0,       /* fan speed: AUTO / LOW / MED / HIGH */
+    MENU_PRESENCE,      /* Home / Away (manual toggle)        */
+    MENU_OCC_SRC,       /* occupancy source: MANUAL / SENSOR  */
+    MENU_UNITS,         /* °C / °F                    */
+    MENU_SENSOR,        /* NTC Type 2 / Type 3        */
+    MENU_MATTER_CODE,   /* view Matter pairing code   */
+    MENU_BACK,          /* return to home             */
+    MENU_COUNT,
+};
+
+static const char *fan_speed_name(int s)
+{
+    switch (s) {
+        case THERMO_FAN_LOW:  return "LOW";
+        case THERMO_FAN_MED:  return "MED";
+        case THERMO_FAN_HIGH: return "HIGH";
+        case THERMO_FAN_AUTO:
+        default:              return "AUTO";
+    }
+}
+
+/* Persistent buffers backing the UI model's string pointers (ui_task only). */
+static char s_code[24];
+static char s_menu_fan[20];
+static char s_menu_presence[20];
+static char s_menu_occsrc[20];
+static char s_menu_units[20];
+static char s_menu_sensor[20];
+static const char *s_menu_lines[UI_MENU_MAX];
 
 static inline int64_t now_ms(void) { return esp_timer_get_time() / 1000; }
 static int clampi(int v, int lo, int hi){ return v < lo ? lo : (v > hi ? hi : v); }
@@ -98,14 +131,25 @@ static void control_task(void *arg)
         .gpio_y  = CONFIG_THERMO_PIN_RELAY_Y,
         .gpio_g  = CONFIG_THERMO_PIN_RELAY_G,
         .gpio_ob = CONFIG_THERMO_PIN_RELAY_OB,
+        .gpio_g_low  = CONFIG_THERMO_PIN_FAN_LOW,
+        .gpio_g_med  = CONFIG_THERMO_PIN_FAN_MED,
+        .gpio_g_high = CONFIG_THERMO_PIN_FAN_HIGH,
         .active_high = true,
     };
     relays_init(&rc);
+
+    occupancy_config_t oc = {
+        .gpio = CONFIG_THERMO_PIN_OCCUPANCY,
+        .vacancy_timeout_s = CONFIG_THERMO_OCC_VACANCY_TIMEOUT_S,
+        .active_high = CONFIG_THERMO_OCC_SENSOR_ACTIVE_HIGH,
+    };
+    occupancy_init(&oc);
 
     thermo_state_t core = {0};
     thermo_core_init(&core, now_ms());
 
     bool last_h = false, last_c = false, last_f = false;
+    bool last_occ = true, occ_reported = false;
 
     for (;;) {
         app_lock();
@@ -121,31 +165,46 @@ static void control_task(void *arg)
         tcfg.min_on_s  = cfg.min_on_s;
         tcfg.startup_lockout_s = CONFIG_THERMO_STARTUP_LOCKOUT_S;
         tcfg.hp_mode   = (thermo_hp_mode_t)cfg.hp_reversing;
+        tcfg.fan_call_speed = CONFIG_THERMO_FAN_CALL_SPEED;
+
+        /* Resolve Home/Away from the sensor (if selected & wired) or the manual
+         * toggle, then pick the occupied or unoccupied setpoints (Matter OCC). */
+        bool occupied = (cfg.occ_source == OCC_SRC_SENSOR && occupancy_sensor_present())
+                          ? occupancy_poll((uint64_t)now_ms())
+                          : cfg.occ_manual_home;
+        int heat_eff = clampi(occupied ? cfg.heat_set_c100 : cfg.unocc_heat_c100, HEAT_MIN, HEAT_MAX);
+        int cool_eff = clampi(occupied ? cfg.cool_set_c100 : cfg.unocc_cool_c100, COOL_MIN, COOL_MAX);
 
         thermo_input_t in = {
             .mode        = (thermo_mode_t)cfg.mode,
             .temp_c      = temp_c100 / 100.0f,
-            .heat_set_c  = cfg.heat_set_c100 / 100.0f,
-            .cool_set_c  = cfg.cool_set_c100 / 100.0f,
+            .heat_set_c  = heat_eff / 100.0f,
+            .cool_set_c  = cool_eff / 100.0f,
             .fault       = fault,
-            .fan_request = false,
+            .fan_speed   = cfg.fan_speed,
             .now_ms      = (uint64_t)now_ms(),
         };
         thermo_output_t out = thermo_core_step(&tcfg, &in, &core);
 
         relays_state_t rs = { .w = out.w_heat, .y = out.y_cool,
-                              .g = out.g_fan, .ob = out.ob_reversing };
+                              .g = out.g_fan, .ob = out.ob_reversing,
+                              .fan_level = out.fan_level };
         relays_apply(&rs);
 
         app_lock();
         g_state.calling_heat = out.w_heat;
         g_state.calling_cool = out.y_cool;
         g_state.fan_on = out.g_fan;
+        g_state.occupied = occupied;
         app_unlock();
 
         if (out.w_heat != last_h || out.y_cool != last_c || out.g_fan != last_f) {
             app_matter_report_running_state(out.w_heat, out.y_cool, out.g_fan);
             last_h = out.w_heat; last_c = out.y_cool; last_f = out.g_fan;
+        }
+        if (!occ_reported || occupied != last_occ) {
+            app_matter_report_occupancy(occupied);
+            last_occ = occupied; occ_reported = true;
         }
         vTaskDelay(pdMS_TO_TICKS(500));
     }
@@ -190,57 +249,143 @@ static void cycle_mode(void)
     g_state.cfg.mode = m;
 }
 
-static void apply_encoder(int delta)
+/* Adjust the active setpoint by encoder detents (home/adjust screens only).
+ * When Away, edits the UNOCCUPIED setpoints (the ones currently in effect).
+ * Returns true if it edited an unoccupied setpoint. */
+static bool adjust_setpoint(int delta)
 {
     int step = setpoint_step_c100() * delta;
+    bool away = !g_state.occupied;
     if (g_state.active_setpoint == 1) {
-        g_state.cfg.cool_set_c100 = clampi(g_state.cfg.cool_set_c100 + step, COOL_MIN, COOL_MAX);
+        int *p = away ? &g_state.cfg.unocc_cool_c100 : &g_state.cfg.cool_set_c100;
+        *p = clampi(*p + step, COOL_MIN, COOL_MAX);
     } else {
-        g_state.cfg.heat_set_c100 = clampi(g_state.cfg.heat_set_c100 + step, HEAT_MIN, HEAT_MAX);
+        int *p = away ? &g_state.cfg.unocc_heat_c100 : &g_state.cfg.heat_set_c100;
+        *p = clampi(*p + step, HEAT_MIN, HEAT_MAX);
     }
     g_state.screen = UI_SCREEN_ADJUST;
     s_last_adjust_ms = now_ms();
+    return away;
+}
+
+/* Act on the selected settings-menu row. Sets change flags for the caller. */
+static void menu_activate(bool *changed_units, bool *changed_sensor,
+                          bool *changed_fan, bool *save)
+{
+    switch (g_state.menu_index) {
+        case MENU_FAN:
+            /* cycle AUTO -> LOW -> MED -> HIGH -> AUTO */
+            g_state.cfg.fan_speed = (g_state.cfg.fan_speed + 1) % 4;
+            *changed_fan = true; *save = true;
+            break;
+        case MENU_PRESENCE:
+            /* Manual Home/Away toggle. In SENSOR mode this sets the manual
+             * preference; the sensor resumes control on the next motion. The
+             * control loop applies/reports the resolved occupancy. */
+            g_state.cfg.occ_manual_home = !g_state.cfg.occ_manual_home;
+            *save = true;
+            break;
+        case MENU_OCC_SRC:
+            g_state.cfg.occ_source =
+                (g_state.cfg.occ_source == OCC_SRC_SENSOR) ? OCC_SRC_MANUAL : OCC_SRC_SENSOR;
+            *save = true;
+            break;
+        case MENU_UNITS:
+            g_state.cfg.fahrenheit = !g_state.cfg.fahrenheit;
+            *changed_units = true; *save = true;
+            break;
+        case MENU_SENSOR:
+            g_state.cfg.ntc_type =
+                (g_state.cfg.ntc_type == NTC_TYPE_2) ? NTC_TYPE_3 : NTC_TYPE_2;
+            *changed_sensor = true; *save = true;
+            break;
+        case MENU_MATTER_CODE:
+            g_state.screen = UI_SCREEN_INFO;      /* show the payload detail */
+            break;
+        case MENU_BACK:
+        default:
+            g_state.screen = UI_SCREEN_HOME;
+            break;
+    }
 }
 
 static void handle_event(const app_event_t *e)
 {
-    bool changed_setpoints = false, changed_mode = false, save = false;
+    bool changed_setpoints = false, changed_unocc = false, changed_mode = false;
+    bool changed_units = false, changed_sensor = false, changed_fan = false, save = false;
 
     app_lock();
+    int scr = g_state.screen;
     switch (e->type) {
         case EVT_ENCODER_DELTA:
-            apply_encoder(e->value);
-            changed_setpoints = true; save = true;
+            if (scr == UI_SCREEN_MENU) {
+                int n = MENU_COUNT;
+                g_state.menu_index = ((g_state.menu_index + e->value) % n + n) % n;
+            } else if (scr == UI_SCREEN_INFO) {
+                /* no rotation action on the info screen */
+            } else {
+                if (adjust_setpoint(e->value)) changed_unocc = true;
+                else                            changed_setpoints = true;
+                save = true;
+            }
             break;
-        case EVT_BTN_MODE_SHORT:
-            if (g_state.screen == UI_SCREEN_MENU) { g_state.screen = UI_SCREEN_HOME; }
-            else { cycle_mode(); changed_mode = true; save = true; }
+
+        case EVT_ENC_SW_SHORT:                     /* select / confirm */
+            if (scr == UI_SCREEN_MENU) {
+                menu_activate(&changed_units, &changed_sensor, &changed_fan, &save);
+            } else if (scr == UI_SCREEN_INFO) {
+                g_state.screen = UI_SCREEN_MENU;   /* back to the list */
+            } else {
+                g_state.active_setpoint ^= 1;      /* toggle heat/cool target */
+                g_state.screen = UI_SCREEN_ADJUST;
+                s_last_adjust_ms = now_ms();
+            }
             break;
-        case EVT_BTN_MENU_LONG:
-            g_state.screen = (g_state.screen == UI_SCREEN_MENU) ? UI_SCREEN_HOME
-                                                                : UI_SCREEN_MENU;
+
+        case EVT_BTN_MODE_SHORT:                   /* mode cycle, or back */
+            if (scr == UI_SCREEN_INFO) {
+                g_state.screen = UI_SCREEN_MENU;
+            } else if (scr == UI_SCREEN_MENU) {
+                g_state.screen = UI_SCREEN_HOME;
+            } else {
+                cycle_mode(); changed_mode = true; save = true;
+            }
             break;
-        case EVT_ENC_SW_SHORT:
-            g_state.active_setpoint ^= 1;     /* toggle heat/cool target */
-            g_state.screen = UI_SCREEN_ADJUST;
-            s_last_adjust_ms = now_ms();
+
+        case EVT_BTN_MENU_LONG:                    /* open / close settings */
+            if (scr == UI_SCREEN_MENU || scr == UI_SCREEN_INFO) {
+                g_state.screen = UI_SCREEN_HOME;
+            } else {
+                g_state.screen = UI_SCREEN_MENU;
+                g_state.menu_index = 0;
+            }
             break;
+
         case EVT_ENC_SW_LONG:
             g_state.screen = UI_SCREEN_HOME;
             break;
+
         case EVT_RESET_LONG:
             app_unlock();
             ESP_LOGW(TAG, "factory reset requested");
             app_matter_factory_reset();
             return;
+
         case EVT_MATTER_SET_MODE:
             g_state.cfg.mode = e->value; save = true; break;
         case EVT_MATTER_SET_HEAT:
             g_state.cfg.heat_set_c100 = clampi(e->value, HEAT_MIN, HEAT_MAX); save = true; break;
         case EVT_MATTER_SET_COOL:
             g_state.cfg.cool_set_c100 = clampi(e->value, COOL_MIN, COOL_MAX); save = true; break;
+        case EVT_MATTER_SET_UNOCC_HEAT:
+            g_state.cfg.unocc_heat_c100 = clampi(e->value, HEAT_MIN, HEAT_MAX); save = true; break;
+        case EVT_MATTER_SET_UNOCC_COOL:
+            g_state.cfg.unocc_cool_c100 = clampi(e->value, COOL_MIN, COOL_MAX); save = true; break;
         case EVT_MATTER_SET_UNITS:
             g_state.cfg.fahrenheit = (e->value != 0); save = true; break;
+        case EVT_MATTER_SET_FAN:
+            g_state.cfg.fan_speed = clampi(e->value, THERMO_FAN_AUTO, THERMO_FAN_HIGH);
+            save = true; break;
         case EVT_MATTER_COMMISSIONED:
             g_state.commissioned = (e->value != 0);
             g_state.screen = UI_SCREEN_HOME;
@@ -249,36 +394,77 @@ static void handle_event(const app_event_t *e)
     app_config_t snapshot = g_state.cfg;
     app_unlock();
 
-    /* Local changes -> notify Matter controllers. */
+    /* Local changes -> apply to drivers and notify Matter controllers. */
     if (changed_setpoints) app_matter_report_setpoints(snapshot.heat_set_c100, snapshot.cool_set_c100);
+    if (changed_unocc)     app_matter_report_unocc_setpoints(snapshot.unocc_heat_c100, snapshot.unocc_cool_c100);
     if (changed_mode)      app_matter_report_mode(snapshot.mode);
+    if (changed_units)     app_matter_report_units(snapshot.fahrenheit);
+    if (changed_fan)       app_matter_report_fan(snapshot.fan_speed);
+    if (changed_sensor)    thermistor_set_type((ntc_type_t)snapshot.ntc_type);
     if (save)              app_nvs_save(&snapshot);
 }
 
 /* ---- UI task -------------------------------------------------------------- */
 
-static void build_model(ui_model_t *m, char *code, int code_len)
+static void build_model(ui_model_t *m)
 {
+    int ntc_type, fan_speed, occ_source;
+    bool occ_home_pref;
     app_lock();
+    bool occ_live = g_state.occupied;
     m->temp_c100      = g_state.temp_c100;
-    m->heat_set_c100  = g_state.cfg.heat_set_c100;
-    m->cool_set_c100  = g_state.cfg.cool_set_c100;
+    /* Show/edit the setpoints currently in effect: unoccupied when Away. */
+    m->heat_set_c100  = occ_live ? g_state.cfg.heat_set_c100 : g_state.cfg.unocc_heat_c100;
+    m->cool_set_c100  = occ_live ? g_state.cfg.cool_set_c100 : g_state.cfg.unocc_cool_c100;
     m->mode           = g_state.cfg.mode;
     m->fahrenheit     = g_state.cfg.fahrenheit;
     m->calling_heat   = g_state.calling_heat;
     m->calling_cool   = g_state.calling_cool;
     m->fan_on         = g_state.fan_on;
+    m->fan_speed      = g_state.cfg.fan_speed;
+    m->occupied       = g_state.occupied;
     m->fault          = g_state.fault;
     m->commissioned   = g_state.commissioned;
     m->thread_rssi    = g_state.thread_rssi;
     m->screen         = (ui_screen_t)g_state.screen;
     m->active_setpoint= g_state.active_setpoint;
+    m->menu_index     = g_state.menu_index;
+    ntc_type          = g_state.cfg.ntc_type;
+    fan_speed         = g_state.cfg.fan_speed;
+    occ_source        = g_state.cfg.occ_source;
+    occ_home_pref     = g_state.cfg.occ_manual_home;
     app_unlock();
 
-    if (!m->commissioned) {
-        app_matter_get_pairing_code(code, code_len);
-        m->pairing_code = code;
-    }
+    /* Matter setup payload — available whether or not we're commissioned, so
+     * it can be shown both on the pairing screen and in Settings → Matter code. */
+    app_matter_get_pairing_code(s_code, sizeof(s_code));
+    if (s_code[0] == '\0') strncpy(s_code, "----", sizeof(s_code));
+    m->pairing_code = s_code;
+
+    /* Settings-menu lines (LABEL: VALUE). PRESENCE shows the live resolved state
+     * (in sensor mode) or the manual preference (in manual mode). */
+    snprintf(s_menu_fan,    sizeof(s_menu_fan),    "FAN: %s", fan_speed_name(fan_speed));
+    snprintf(s_menu_presence, sizeof(s_menu_presence), "PRESENCE: %s",
+             (occ_source == OCC_SRC_SENSOR ? m->occupied : occ_home_pref) ? "HOME" : "AWAY");
+    snprintf(s_menu_occsrc, sizeof(s_menu_occsrc), "OCC SRC: %s",
+             occ_source == OCC_SRC_SENSOR ? "SENSOR" : "MANUAL");
+    snprintf(s_menu_units,  sizeof(s_menu_units),  "UNITS: %s", m->fahrenheit ? "F" : "C");
+    snprintf(s_menu_sensor, sizeof(s_menu_sensor), "SENSOR: TYPE %d",
+             ntc_type == NTC_TYPE_2 ? 2 : 3);
+    s_menu_lines[MENU_FAN]         = s_menu_fan;
+    s_menu_lines[MENU_PRESENCE]    = s_menu_presence;
+    s_menu_lines[MENU_OCC_SRC]     = s_menu_occsrc;
+    s_menu_lines[MENU_UNITS]       = s_menu_units;
+    s_menu_lines[MENU_SENSOR]      = s_menu_sensor;
+    s_menu_lines[MENU_MATTER_CODE] = "MATTER CODE >";
+    s_menu_lines[MENU_BACK]        = "BACK";
+    for (int i = 0; i < MENU_COUNT && i < UI_MENU_MAX; ++i) m->menu_lines[i] = s_menu_lines[i];
+    m->menu_count = MENU_COUNT;
+
+    /* Info screen (Settings → Matter code). */
+    m->info_title = "MATTER CODE";
+    m->info_line1 = s_code;
+    m->info_line2 = "SCAN QR OR ENTER";
 }
 
 static void ui_task(void *arg)
@@ -325,7 +511,6 @@ static void ui_task(void *arg)
     ui_oled_set_brightness((uint8_t)g_state.cfg.brightness);
     app_unlock();
 
-    char code[24] = {0};
     int64_t last_render = 0;
 
     for (;;) {
@@ -350,7 +535,7 @@ static void ui_task(void *arg)
         /* Redraw at ~10 Hz. */
         if (now_ms() - last_render >= 100) {
             ui_model_t m = {0};
-            build_model(&m, code, sizeof(code));
+            build_model(&m);
             ui_oled_render(&m);
             last_render = now_ms();
         }

@@ -43,8 +43,10 @@ The ESP32-C6 GPIO matrix is flexible; the assignment below avoids the **strappin
 | **Push button** | GPIO3 | GPIO (ISR) | IN | Internal pull-up; mode / back |
 | **Relay W** (heat) | GPIO18 | GPIO | OUT | Active-high to driver |
 | **Relay Y** (cool/compressor) | GPIO19 | GPIO | OUT | Active-high to driver |
-| **Relay G** (fan) | GPIO20 | GPIO | OUT | Active-high to driver |
+| **Relay G** (fan enable) | GPIO20 | GPIO | OUT | Active-high; any fan speed > 0 |
 | **Relay O·B** (reversing valve) | GPIO21 | GPIO | OUT | Heat-pump only |
+| **Fan taps** G_LOW/MED/HIGH (opt.) | −1 | GPIO | OUT | Multi-speed blower; one-hot; disabled (−1) by default |
+| **Occupancy / PIR** (opt.) | −1 | GPIO | IN | Motion input; disabled (−1) = manual Home/Away only |
 | **Status RGB LED** | GPIO8* | RMT (WS2812) | OUT | On-board on DevKitC-1 (strapping — LED only) |
 | **Factory-reset button** | GPIO9* | GPIO | IN | Re-uses BOOT (strapping, pulled-up) |
 | **Console UART TX/RX** | GPIO16/17 | UART0 | — | Debug/log; keep free |
@@ -177,6 +179,11 @@ Self-heating is negligible: with `R_fix` = 10 kΩ the NTC dissipates ≲ 0.3 mW.
 - **Encoder switch (SW)** and **push button:** momentary, active-low with internal
   pull-ups; debounced in firmware (`components/button`) with short/long-press detection.
 - **BOOT/reset button:** doubles as the factory-reset input (long-press).
+- **Occupancy / PIR sensor (optional):** a digital motion output (e.g. HC-SR501, AM312, or
+  a PIR module) on `CONFIG_THERMO_PIN_OCCUPANCY`. Active-high by default (idle low, high on
+  motion); the firmware enables the opposite internal pull so an unconnected pin reads "no
+  motion". Powered from 3.3 V (AM312) or 5 V (HC-SR501 — level-check the output). Leave the
+  pin at −1 to use only the manual Home/Away toggle.
 
 ## 6. Outputs (HVAC)
 
@@ -189,6 +196,22 @@ Self-heating is negligible: with `R_fix` = 10 kΩ the NTC dissipates ≲ 0.3 mW.
 - **Isolation:** keep the 24 VAC domain optically isolated from the 3.3 V logic domain.
 - **Fail-safe:** drivers are active-high; at reset/brown-out GPIOs are high-Z and the loads
   are **off**. Firmware also forces off on fault (FR-12).
+
+### Fan speed (Low / Med / High / Auto)
+
+The fan speed is a first-class control (settings menu + Matter Fan Control cluster). How it
+reaches the blower depends on the wiring, all firmware-selectable:
+
+- **Single-speed (default):** just the `G` relay. Any non-Auto speed = fan on; `Auto` runs
+  the fan only during a heat/cool call.
+- **Multi-speed blower:** wire the optional `G_LOW` / `G_MED` / `G_HIGH` tap relays (Kconfig
+  pins, default −1 = unused). The firmware energizes exactly one tap for the active level
+  (one-hot) plus `G` as a general enable.
+- **ECM / 0–10 V / PWM (future hook):** map the level to a duty cycle on a spare LEDC pin;
+  the level→output mapping lives in `components/relays`.
+
+During a heat/cool call the fan runs at the configured **call speed** (`THERMO_FAN_CALL_SPEED`,
+default High). A fixed Low/Med/High selection circulates continuously even when idle.
 
 ## 7. Status LED
 

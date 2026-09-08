@@ -30,6 +30,27 @@ Provided by the stack. Key clusters:
 | Thermostat User Interface Configuration | 0x0204 | display units, keypad lock |
 | Groups | 0x0004 | *(optional)* |
 
+### Endpoint 2 — Fan (`0x002B`)
+
+Exposes the blower as a standard, independently-controllable Matter fan, so its speed can
+be viewed and **overridden** from any ecosystem.
+
+| Cluster | ID | Role |
+|---|---|---|
+| Identify | 0x0003 | locate |
+| **Fan Control** | 0x0202 | fan speed (Auto / Low / Med / High) |
+| Groups | 0x0004 | *(optional)* |
+
+### Endpoint 3 — Occupancy Sensor (`0x0107`)
+
+Publishes the resolved **Home / Away** state — from the PIR/occupancy sensor or the manual
+toggle — so controllers and automations can react to presence.
+
+| Cluster | ID | Role |
+|---|---|---|
+| Identify | 0x0003 | locate |
+| **Occupancy Sensing** | 0x0406 | `Occupancy` bitmap (bit0 = occupied) |
+
 ---
 
 ## 2. Thermostat cluster (0x0201)
@@ -40,7 +61,7 @@ Provided by the stack. Key clusters:
 |---|---|---|---|
 | Heating (`HEAT`) | 0 | ✅ | heating setpoint & W output |
 | Cooling (`COOL`) | 1 | ✅ | cooling setpoint & Y output |
-| Occupancy (`OCC`) | 2 | ❌ v1 | occupied/unoccupied sets |
+| Occupancy (`OCC`) | 2 | ✅ | occupied/unoccupied setpoints + `Occupancy` attr |
 | Schedule (`SCH`) | 3 | ❌ v1 | on-device schedule |
 | Setback (`SB`) | 4 | ❌ v1 | setback |
 | AutoMode (`AUTO`) | 5 | ✅ | System Mode = Auto w/ dead-zone |
@@ -52,12 +73,15 @@ All temperatures are **signed int16 in 0.01 °C** (e.g. 2150 = 21.50 °C).
 | Attribute | ID | Type | Access | Notes |
 |---|---|---|---|---|
 | LocalTemperature | 0x0000 | int16 | R | measured room temp; `null` on fault |
+| Occupancy | 0x0002 | map8 | R | OCC feature; bit0 = occupied (Home) |
 | AbsMinHeatSetpointLimit | 0x0003 | int16 | R | e.g. 700 (7 °C) |
 | AbsMaxHeatSetpointLimit | 0x0004 | int16 | R | e.g. 3000 (30 °C) |
 | AbsMinCoolSetpointLimit | 0x0005 | int16 | R | e.g. 1600 (16 °C) |
 | AbsMaxCoolSetpointLimit | 0x0006 | int16 | R | e.g. 3200 (32 °C) |
 | OccupiedCoolingSetpoint | 0x0011 | int16 | RW | default 2600 (26 °C) |
 | OccupiedHeatingSetpoint | 0x0012 | int16 | RW | default 2000 (20 °C) |
+| UnoccupiedCoolingSetpoint | 0x0013 | int16 | RW | OCC; Away cool, default 2900 (29 °C) |
+| UnoccupiedHeatingSetpoint | 0x0014 | int16 | RW | OCC; Away heat, default 1700 (17 °C) |
 | MinHeatSetpointLimit | 0x0015 | int16 | RW | user-limited range |
 | MaxHeatSetpointLimit | 0x0016 | int16 | RW | |
 | MinCoolSetpointLimit | 0x0017 | int16 | RW | |
@@ -106,6 +130,59 @@ Local encoder adjustments produce the **same** setpoint writes internally, then 
 
 ---
 
+## 3a. Fan Control cluster (0x0202, endpoint 2)
+
+Exposes the fan speed for remote view/override.
+
+| Attribute | ID | Type | Access | Notes |
+|---|---|---|---|---|
+| FanMode | 0x0000 | enum8 | RW | Off=0, Low=1, Medium=2, High=3, On=4, Auto=5 |
+| FanModeSequence | 0x0001 | enum8 | R | **2** = Off/Low/Med/High/Auto |
+| PercentSetting | 0x0002 | uint8 (0–100) | RW | mapped onto the discrete levels |
+| PercentCurrent | 0x0003 | uint8 | R | reflects the running level |
+
+**Mapping to the device fan speed** (`AUTO / LOW / MED / HIGH`):
+
+| FanMode | Device speed |
+|---|---|
+| Auto (5), Off (0) | AUTO — fan follows the heat/cool call |
+| Low (1) | LOW — continuous |
+| Medium (2) | MED — continuous |
+| High (3), On (4) | HIGH — continuous |
+
+`PercentSetting` writes map by band: 0 → Auto, 1–33 → Low, 34–66 → Med, 67–100 → High.
+A local fan-speed change (settings menu) calls `attribute::update(FanMode)` so controllers
+stay in sync; a remote write updates the device and the OLED. Single-speed installs (one
+`G` wire) treat any non-Auto speed as "fan on"; multi-tap blowers energize the matching
+`G_LOW/G_MED/G_HIGH` relay.
+
+---
+
+## 3b. Occupancy Sensing cluster (0x0406, endpoint 3)
+
+| Attribute | ID | Type | Access | Notes |
+|---|---|---|---|---|
+| Occupancy | 0x0000 | bitmap8 | R | bit0 = occupied (Home) |
+| OccupancySensorType | 0x0001 | enum8 | R | PIR / occupancy (set per sensor) |
+| OccupancySensorTypeBitmap | 0x0002 | bitmap8 | R | supported types |
+
+The reported occupancy is the **resolved** Home/Away state: the PIR sensor (with the
+vacancy timeout) when the source is `Sensor` and a sensor is wired, otherwise the manual
+Home/Away toggle. This is read-only to controllers — presence is a sensor input, not a
+remote command; the local menu toggles it. The same resolved state is mirrored to the
+Thermostat cluster's `Occupancy` attribute (0x0002) below.
+
+### How occupancy drives setpoints (Matter OCC feature)
+
+The Thermostat cluster runs with the **OCC feature**: it carries an `Occupancy` attribute
+plus separate `Unoccupied{Heating,Cooling}Setpoint` attributes. The control loop uses the
+**occupied** setpoints when Home and the **unoccupied** setpoints when Away — the two sets
+are independent (no offset math), and both are writable from Matter and editable locally
+(the ADJUST screen edits whichever set is currently in effect). This matches how Honeywell
+Home separates the comfort and Away temperatures.
+
+---
+
 ## 4. Basic Information (set these before shipping)
 
 | Field | Value (example) |
@@ -125,6 +202,13 @@ Local encoder adjustments produce the **same** setpoint writes internally, then 
 ---
 
 ## 5. Commissioning flow (BLE → Thread)
+
+The pairing bring-up mirrors the **esp-matter `light` example** so behavior is identical to
+that well-trodden path: `esp_matter::start(app_event_cb)`, `PrintOnboardingCodes(BLE)` on
+boot (QR + manual code to console), and on the **last fabric being removed** the device
+re-opens a basic commissioning window (DNS-SD) so it can be re-added. The device-event
+callback handles the same events (`kCommissioningComplete`, `kFabricRemoved`,
+`kBLEDeinitialized`, `kInterfaceIpAddressChanged`, commissioning-window open/close).
 
 **Prerequisite:** a **Thread Border Router** on the LAN — e.g. Apple TV 4K / HomePod mini,
 Google Nest Hub (2nd gen) / Nest Wifi, Amazon eero, or an OpenThread Border Router (e.g.
@@ -153,16 +237,27 @@ device joins multiple fabrics simultaneously.
 
 ## 6. Local ↔ Matter synchronization rules
 
+Everything the user can change locally can also be **overridden from Matter**, and vice
+versa — the two are kept in sync bidirectionally.
+
 | Trigger | Action |
 |---|---|
-| Remote write `SystemMode` | update `app_state.mode`, re-run control, redraw OLED |
-| Remote write `OccupiedHeatingSetpoint` / `OccupiedCoolingSetpoint` | clamp to limits, update state, control, OLED |
+| Remote write `SystemMode` (override mode) | update `app_state.mode`, re-run control, redraw OLED |
+| Remote write `OccupiedHeatingSetpoint` / `OccupiedCoolingSetpoint` (override setpoint) | clamp to limits, update state, control, OLED |
+| Remote write `UnoccupiedHeatingSetpoint` / `UnoccupiedCoolingSetpoint` (override Away setpoint) | clamp to limits, update state, control, OLED |
+| Remote write `FanControl::FanMode` / `PercentSetting` (override speed) | update fan speed, re-run control, OLED |
 | Remote write `TemperatureDisplayMode` | switch OLED units, persist |
 | Local encoder setpoint change | update state → `attribute::update()` → controllers notified |
 | Local mode change (button) | update state → `attribute::update(SystemMode)` |
+| Local fan-speed change (menu) | update state → `attribute::update(FanMode)` |
+| Local units change (menu) | update state → `attribute::update(TemperatureDisplayMode)` |
+| Occupancy change (PIR or manual toggle) | switch occupied↔unoccupied setpoints → `attribute::update(Occupancy)` (thermostat + sensor endpoints) |
+| Local Away-setpoint change (ADJUST while Away) | update state → `attribute::update(Unoccupied*Setpoint)` |
 | Measured temp change ≥ 0.1 °C or every N s | `attribute::update(LocalTemperature)` |
 | Output state change | `attribute::update(ThermostatRunningState)` |
 | Sensor fault | `LocalTemperature = null`, outputs off, running state cleared |
+
+All remote writes are persisted to NVS so an override survives a reboot.
 
 ---
 

@@ -22,6 +22,7 @@ typedef enum {
     UI_SCREEN_HOME = 0,
     UI_SCREEN_ADJUST,
     UI_SCREEN_MENU,
+    UI_SCREEN_INFO,      /* Matter payload detail (from the menu) */
     UI_SCREEN_PAIRING,
     UI_SCREEN_FAULT,
 } ui_screen_t;
@@ -37,13 +38,25 @@ typedef struct {
     bool  calling_heat;
     bool  calling_cool;
     bool  fan_on;
+    int   fan_speed;        /* thermo_fan_speed_t: 0=auto,1=low,2=med,3=high */
+    bool  occupied;         /* Home (true) / Away (false) */
     bool  fault;
     bool  commissioned;     /* Matter commissioned?                              */
     int   thread_rssi;      /* dBm, for the signal glyph (0 if unknown)          */
     int   active_setpoint;  /* 0 = heat, 1 = cool (which one ADJUST edits)        */
-    const char *pairing_code;   /* manual pairing code string (PAIRING screen)   */
-    const char *menu_title;     /* current menu item label (MENU screen)         */
-    const char *menu_value;     /* current menu item value  (MENU screen)        */
+    const char *pairing_code;   /* Matter manual pairing code (PAIRING/INFO)     */
+
+    /* MENU screen: a small scrollable list. Each line is already formatted as
+     * "LABEL: VALUE"; the selected row is highlighted. */
+#define UI_MENU_MAX 8
+    const char *menu_lines[UI_MENU_MAX];
+    int   menu_count;
+    int   menu_index;       /* highlighted row                                   */
+
+    /* INFO screen (Matter payload detail). */
+    const char *info_title;
+    const char *info_line1; /* e.g. manual pairing code                          */
+    const char *info_line2; /* e.g. discriminator / passcode                     */
 } ui_model_t;
 
 typedef struct {
