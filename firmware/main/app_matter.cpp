@@ -198,6 +198,15 @@ void app_matter_report_mode(int mode)
     attribute::update(s_ep, Thermostat::Id, Thermostat::Attributes::SystemMode::Id, &val);
 }
 
+void app_matter_report_units(bool fahrenheit)
+{
+    if (!s_ep) return;
+    esp_matter_attr_val_t val = esp_matter_enum8(fahrenheit ? 1 : 0);   /* 0=C, 1=F */
+    attribute::update(s_ep, ThermostatUserInterfaceConfiguration::Id,
+                      ThermostatUserInterfaceConfiguration::Attributes::TemperatureDisplayMode::Id,
+                      &val);
+}
+
 void app_matter_factory_reset(void)
 {
     esp_matter::factory_reset();   /* clears fabrics + Thread creds, then reboots */

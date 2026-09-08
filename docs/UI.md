@@ -80,22 +80,45 @@ detent = ±0.5° (clamped to min/max limits). Commit on press or after the timeo
 
 ## 5. SETTINGS menu
 
-Long-press button opens a scrollable list; rotate to move, press to edit, button to go
-back. Items:
+Long-press the push button (≥ 3 s) to open a scrollable list. **Rotate** the encoder to
+move the highlight, **press the encoder** to activate the highlighted row, and **short-press
+the push button** to go back / close.
 
-| Item | Values | Persisted key |
+### Implemented (v1)
+
+| Row | Action | Persisted key |
 |---|---|---|
-| Units | °C / °F | `units` |
-| Deadband | 0.2 – 3.0 °C | `deadband` |
-| Temp calibration | −5.0 … +5.0 °C | `tempOffset` |
-| Thermistor type | Type 2 / Type 3 | `ntcType` |
-| Min compressor off | 60 – 900 s | `minOff` |
-| Min on time | 30 – 600 s | `minOn` |
-| Heat-pump reversing | Off / O in cool / B in heat | `hpReversing` |
-| Display brightness | 0 – 255 | `brightness` |
-| Network info | (view) IP, Thread role, RSSI | — |
-| About | (view) FW ver, VID/PID | — |
-| Factory reset | (confirm) | — |
+| `UNITS: C/F` | encoder-press toggles °C ⇄ °F (also mirrors to the Matter `TemperatureDisplayMode` attribute) | `units` |
+| `SENSOR: TYPE 2/3` | encoder-press toggles the NTC curve; re-applied to the sensor driver live | `ntcType` |
+| `MATTER CODE >` | encoder-press opens the **INFO screen** showing the manual pairing code (the Matter setup payload number) | — |
+| `BACK` | return to Home | — |
+
+The selected row is drawn as an inverted (highlighted) bar. Changes are persisted to NVS
+immediately and, where relevant, pushed to Matter controllers.
+
+### Planned (hooks already in the config/NVS)
+
+Deadband, temperature calibration offset, min compressor off / min on, heat-pump reversing
+mode, display brightness, and read-only Network/About views. These already exist as
+`app_config_t` fields and `Kconfig` defaults; they only need menu rows added to the list in
+`app_control.cpp` (`MENU_*` enum + `build_model()` line + a `menu_activate()` case).
+
+## 5a. INFO screen (Matter code)
+
+Reached from **Settings → `MATTER CODE >`**. Shows the Matter **manual pairing code**
+(setup payload number) in large digits, so the device can be (re)commissioned without the
+QR code. Encoder-press or push-button returns to the menu. The same code is generated from
+the commissionable-data provider whether or not the device is currently commissioned.
+
+```
+┌────────────────────────────────────────────┐
+│ MATTER CODE                                 │
+│────────────────────────────────────────────│
+│  1234-567-8901       ← large pairing code   │
+│                                            │
+│  SCAN QR OR ENTER                           │
+└────────────────────────────────────────────┘
+```
 
 ## 6. PAIRING screen (uncommissioned)
 
@@ -128,9 +151,11 @@ All HVAC outputs are forced off while a fault is active (FR-12); the status LED 
 
 ## 8. Rendering notes
 
-- Redraw is event-driven with a ~10 Hz cap; only the dirty regions are pushed to reduce
-  I²C traffic and flicker.
-- Large-digit rendering uses a compact bitmap font; the small font handles labels.
+- A built-in **5×7 bitmap font** (`components/ui_oled/font5x7.inc`, generated and verified by
+  [`tools/gen_font.py`](../tools/gen_font.py)) renders all text; the driver scales it (×3 for
+  the big temperature). Lowercase is up-cased automatically, so the UI uses uppercase labels.
+- Redraw runs at a ~10 Hz cap from `ui_task`; the whole 1 bpp framebuffer is flushed per
+  frame (small enough over 400 kHz I²C).
 - The `ui_oled` component exposes a controller-agnostic surface (SSD1306 default, SH1106
   selectable) so the layout code is display-independent. It can optionally be backed by
   LVGL if a richer UI is desired later.

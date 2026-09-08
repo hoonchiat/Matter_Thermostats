@@ -10,12 +10,13 @@ Because it implements the standard Matter **Thermostat** device type, it pairs a
 with Apple Home, Google Home, Amazon Alexa, Samsung SmartThings and Home Assistant — no
 cloud, no vendor lock-in, all local control over a Thread mesh.
 
-> **Status:** Specification + firmware scaffold. This repository is the *engineering
-> spec* for the device plus a structured ESP-IDF / ESP-Matter project skeleton. The
-> self-contained logic (thermistor conversion, control/hysteresis, encoder & button
-> input) is implemented; the display rendering and Matter endpoint wiring are laid out
-> with clearly marked integration points against the installed SDK versions. See
-> [`docs/SPECIFICATION.md`](docs/SPECIFICATION.md).
+> **Status:** Specification + firmware. This repository is the *engineering spec* for the
+> device plus a structured ESP-IDF / ESP-Matter project. The self-contained logic
+> (thermistor conversion, control/hysteresis, encoder & button input), the OLED UI
+> (5×7 font, home/adjust/menu/info/pairing/fault screens) and the local **settings menu**
+> (select NTC Type 2/3, toggle °C/°F, view the Matter pairing code) are implemented; the
+> Matter endpoint wiring is laid out with clearly marked integration points against the
+> installed SDK version. See [`docs/SPECIFICATION.md`](docs/SPECIFICATION.md).
 
 ---
 
@@ -59,7 +60,7 @@ Matter_Thermostats/
         ├── rotary_encoder/   # PCNT quadrature decoder + switch (implemented)
         ├── button/           # debounced short/long-press (implemented)
         ├── thermostat_core/  # hysteresis + cycle-protection control (implemented)
-        └── ui_oled/          # SSD1306 screen manager (scaffold)
+        └── ui_oled/          # SSD1306 screen manager + 5x7 font + settings menu (implemented)
 ```
 
 ## Quick start (firmware)

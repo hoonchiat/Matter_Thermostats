@@ -48,6 +48,7 @@ typedef struct {
 
     int  screen;            /* ui_screen_t                       */
     int  active_setpoint;   /* 0 = heat, 1 = cool                */
+    int  menu_index;        /* highlighted settings-menu row     */
 } app_state_t;
 
 /* ---- inter-task events ---------------------------------------------------- */
@@ -91,6 +92,7 @@ void app_matter_report_temperature(int temp_c100, bool fault);
 void app_matter_report_running_state(bool heat, bool cool, bool fan);
 void app_matter_report_setpoints(int heat_c100, int cool_c100);
 void app_matter_report_mode(int mode);
+void app_matter_report_units(bool fahrenheit);   /* TemperatureDisplayMode */
 void app_matter_factory_reset(void);
 void app_matter_get_pairing_code(char *out, int out_len);
 

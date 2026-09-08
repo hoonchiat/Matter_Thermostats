@@ -30,6 +30,21 @@ enum { BTN_ID_PUSH = 1, BTN_ID_ENC_SW = 2, BTN_ID_RESET = 3 };
 static QueueHandle_t s_btn_q;      /* button_event_t from the button component */
 static int64_t s_last_adjust_ms;   /* for ADJUST auto-timeout                  */
 
+/* Settings-menu items (order = on-screen order). */
+enum {
+    MENU_UNITS = 0,     /* °C / °F                    */
+    MENU_SENSOR,        /* NTC Type 2 / Type 3        */
+    MENU_MATTER_CODE,   /* view Matter pairing code   */
+    MENU_BACK,          /* return to home             */
+    MENU_COUNT,
+};
+
+/* Persistent buffers backing the UI model's string pointers (ui_task only). */
+static char s_code[24];
+static char s_menu_units[20];
+static char s_menu_sensor[20];
+static const char *s_menu_lines[UI_MENU_MAX];
+
 static inline int64_t now_ms(void) { return esp_timer_get_time() / 1000; }
 static int clampi(int v, int lo, int hi){ return v < lo ? lo : (v > hi ? hi : v); }
 
@@ -190,7 +205,8 @@ static void cycle_mode(void)
     g_state.cfg.mode = m;
 }
 
-static void apply_encoder(int delta)
+/* Adjust the active setpoint by encoder detents (home/adjust screens only). */
+static void adjust_setpoint(int delta)
 {
     int step = setpoint_step_c100() * delta;
     if (g_state.active_setpoint == 1) {
@@ -202,37 +218,90 @@ static void apply_encoder(int delta)
     s_last_adjust_ms = now_ms();
 }
 
+/* Act on the selected settings-menu row. Sets change flags for the caller. */
+static void menu_activate(bool *changed_units, bool *changed_sensor, bool *save)
+{
+    switch (g_state.menu_index) {
+        case MENU_UNITS:
+            g_state.cfg.fahrenheit = !g_state.cfg.fahrenheit;
+            *changed_units = true; *save = true;
+            break;
+        case MENU_SENSOR:
+            g_state.cfg.ntc_type =
+                (g_state.cfg.ntc_type == NTC_TYPE_2) ? NTC_TYPE_3 : NTC_TYPE_2;
+            *changed_sensor = true; *save = true;
+            break;
+        case MENU_MATTER_CODE:
+            g_state.screen = UI_SCREEN_INFO;      /* show the payload detail */
+            break;
+        case MENU_BACK:
+        default:
+            g_state.screen = UI_SCREEN_HOME;
+            break;
+    }
+}
+
 static void handle_event(const app_event_t *e)
 {
-    bool changed_setpoints = false, changed_mode = false, save = false;
+    bool changed_setpoints = false, changed_mode = false;
+    bool changed_units = false, changed_sensor = false, save = false;
 
     app_lock();
+    int scr = g_state.screen;
     switch (e->type) {
         case EVT_ENCODER_DELTA:
-            apply_encoder(e->value);
-            changed_setpoints = true; save = true;
+            if (scr == UI_SCREEN_MENU) {
+                int n = MENU_COUNT;
+                g_state.menu_index = ((g_state.menu_index + e->value) % n + n) % n;
+            } else if (scr == UI_SCREEN_INFO) {
+                /* no rotation action on the info screen */
+            } else {
+                adjust_setpoint(e->value);
+                changed_setpoints = true; save = true;
+            }
             break;
-        case EVT_BTN_MODE_SHORT:
-            if (g_state.screen == UI_SCREEN_MENU) { g_state.screen = UI_SCREEN_HOME; }
-            else { cycle_mode(); changed_mode = true; save = true; }
+
+        case EVT_ENC_SW_SHORT:                     /* select / confirm */
+            if (scr == UI_SCREEN_MENU) {
+                menu_activate(&changed_units, &changed_sensor, &save);
+            } else if (scr == UI_SCREEN_INFO) {
+                g_state.screen = UI_SCREEN_MENU;   /* back to the list */
+            } else {
+                g_state.active_setpoint ^= 1;      /* toggle heat/cool target */
+                g_state.screen = UI_SCREEN_ADJUST;
+                s_last_adjust_ms = now_ms();
+            }
             break;
-        case EVT_BTN_MENU_LONG:
-            g_state.screen = (g_state.screen == UI_SCREEN_MENU) ? UI_SCREEN_HOME
-                                                                : UI_SCREEN_MENU;
+
+        case EVT_BTN_MODE_SHORT:                   /* mode cycle, or back */
+            if (scr == UI_SCREEN_INFO) {
+                g_state.screen = UI_SCREEN_MENU;
+            } else if (scr == UI_SCREEN_MENU) {
+                g_state.screen = UI_SCREEN_HOME;
+            } else {
+                cycle_mode(); changed_mode = true; save = true;
+            }
             break;
-        case EVT_ENC_SW_SHORT:
-            g_state.active_setpoint ^= 1;     /* toggle heat/cool target */
-            g_state.screen = UI_SCREEN_ADJUST;
-            s_last_adjust_ms = now_ms();
+
+        case EVT_BTN_MENU_LONG:                    /* open / close settings */
+            if (scr == UI_SCREEN_MENU || scr == UI_SCREEN_INFO) {
+                g_state.screen = UI_SCREEN_HOME;
+            } else {
+                g_state.screen = UI_SCREEN_MENU;
+                g_state.menu_index = 0;
+            }
             break;
+
         case EVT_ENC_SW_LONG:
             g_state.screen = UI_SCREEN_HOME;
             break;
+
         case EVT_RESET_LONG:
             app_unlock();
             ESP_LOGW(TAG, "factory reset requested");
             app_matter_factory_reset();
             return;
+
         case EVT_MATTER_SET_MODE:
             g_state.cfg.mode = e->value; save = true; break;
         case EVT_MATTER_SET_HEAT:
@@ -249,16 +318,19 @@ static void handle_event(const app_event_t *e)
     app_config_t snapshot = g_state.cfg;
     app_unlock();
 
-    /* Local changes -> notify Matter controllers. */
+    /* Local changes -> apply to drivers and notify Matter controllers. */
     if (changed_setpoints) app_matter_report_setpoints(snapshot.heat_set_c100, snapshot.cool_set_c100);
     if (changed_mode)      app_matter_report_mode(snapshot.mode);
+    if (changed_units)     app_matter_report_units(snapshot.fahrenheit);
+    if (changed_sensor)    thermistor_set_type((ntc_type_t)snapshot.ntc_type);
     if (save)              app_nvs_save(&snapshot);
 }
 
 /* ---- UI task -------------------------------------------------------------- */
 
-static void build_model(ui_model_t *m, char *code, int code_len)
+static void build_model(ui_model_t *m)
 {
+    int ntc_type;
     app_lock();
     m->temp_c100      = g_state.temp_c100;
     m->heat_set_c100  = g_state.cfg.heat_set_c100;
@@ -273,12 +345,31 @@ static void build_model(ui_model_t *m, char *code, int code_len)
     m->thread_rssi    = g_state.thread_rssi;
     m->screen         = (ui_screen_t)g_state.screen;
     m->active_setpoint= g_state.active_setpoint;
+    m->menu_index     = g_state.menu_index;
+    ntc_type          = g_state.cfg.ntc_type;
     app_unlock();
 
-    if (!m->commissioned) {
-        app_matter_get_pairing_code(code, code_len);
-        m->pairing_code = code;
-    }
+    /* Matter setup payload — available whether or not we're commissioned, so
+     * it can be shown both on the pairing screen and in Settings → Matter code. */
+    app_matter_get_pairing_code(s_code, sizeof(s_code));
+    if (s_code[0] == '\0') strncpy(s_code, "----", sizeof(s_code));
+    m->pairing_code = s_code;
+
+    /* Settings-menu lines (LABEL: VALUE). */
+    snprintf(s_menu_units,  sizeof(s_menu_units),  "UNITS: %s", m->fahrenheit ? "F" : "C");
+    snprintf(s_menu_sensor, sizeof(s_menu_sensor), "SENSOR: TYPE %d",
+             ntc_type == NTC_TYPE_2 ? 2 : 3);
+    s_menu_lines[MENU_UNITS]       = s_menu_units;
+    s_menu_lines[MENU_SENSOR]      = s_menu_sensor;
+    s_menu_lines[MENU_MATTER_CODE] = "MATTER CODE >";
+    s_menu_lines[MENU_BACK]        = "BACK";
+    for (int i = 0; i < MENU_COUNT && i < UI_MENU_MAX; ++i) m->menu_lines[i] = s_menu_lines[i];
+    m->menu_count = MENU_COUNT;
+
+    /* Info screen (Settings → Matter code). */
+    m->info_title = "MATTER CODE";
+    m->info_line1 = s_code;
+    m->info_line2 = "SCAN QR OR ENTER";
 }
 
 static void ui_task(void *arg)
@@ -325,7 +416,6 @@ static void ui_task(void *arg)
     ui_oled_set_brightness((uint8_t)g_state.cfg.brightness);
     app_unlock();
 
-    char code[24] = {0};
     int64_t last_render = 0;
 
     for (;;) {
@@ -350,7 +440,7 @@ static void ui_task(void *arg)
         /* Redraw at ~10 Hz. */
         if (now_ms() - last_render >= 100) {
             ui_model_t m = {0};
-            build_model(&m, code, sizeof(code));
+            build_model(&m);
             ui_oled_render(&m);
             last_render = now_ms();
         }

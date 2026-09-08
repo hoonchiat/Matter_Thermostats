@@ -22,7 +22,7 @@ firmware/
     ├── button/               # debounce + short/long press       [implemented]
     ├── thermostat_core/      # mode/hysteresis/cycle-timer law    [implemented, pure]
     ├── relays/               # 4-ch HVAC output driver           [implemented]
-    └── ui_oled/              # SSD1306 screen state machine       [scaffold]
+    └── ui_oled/              # SSD1306 screens + 5x7 font + menu   [implemented]
 ```
 
 **Design principle:** the *decision-making* logic (`thermostat_core`) is a pure state

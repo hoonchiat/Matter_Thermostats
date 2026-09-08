@@ -70,27 +70,57 @@ static void fb_flush(void)
     esp_lcd_panel_draw_bitmap(s.panel, 0, 0, s.cfg.width, s.cfg.height, s.fb);
 }
 
-/* ---- text (PLUG-IN POINT) ------------------------------------------------ */
+/* ---- text (5x7 font) ----------------------------------------------------- */
 
-/* TODO(font): blit `str` at (x,y) using a 5x7 font (scale x1). Return end x.
- * For now this reserves the layout box so callers compose correct geometry. */
+#include "font5x7.inc"
+
+/* Blit one glyph at (x,y) top-left, scaled. Lowercase is up-cased. */
+static void draw_char(int x, int y, char c, int scale)
+{
+    if (c >= 'a' && c <= 'z') c -= 32;           /* up-case */
+    if (c < FONT5X7_FIRST || c > FONT5X7_LAST) c = ' ';
+    const uint8_t *g = font5x7[(int)c - FONT5X7_FIRST];
+    for (int col = 0; col < 5; ++col) {
+        uint8_t bits = g[col];
+        for (int row = 0; row < 7; ++row) {
+            if (bits & (1u << row)) {
+                if (scale == 1) fb_pixel(x + col, y + row, true);
+                else fb_fill_rect(x + col * scale, y + row * scale, scale, scale, true);
+            }
+        }
+    }
+}
+
+/* Draw `str` at (x,y); returns the x just past the string. Advance = 6*scale. */
 static int draw_text(int x, int y, const char *str, int scale)
 {
     if (!str) return x;
-    int adv = (5 * scale + 1);
-    /* Placeholder: underline where text will render so screens are inspectable. */
     for (const char *c = str; *c; ++c) {
-        fb_hline(x, x + 5 * scale - 1, y + 7 * scale, true);
-        x += adv;
+        draw_char(x, y, *c, scale);
+        x += 6 * scale;
     }
     return x;
 }
 
-/* TODO(font): render the large temperature (e.g. "21.4") centered. */
+static int text_width(const char *str, int scale)
+{
+    return (int)strlen(str) * 6 * scale;
+}
+
+/* A small degree ring near (x,y) top-left (about 3x3). */
+static void draw_degree(int x, int y)
+{
+    fb_pixel(x + 1, y, true);
+    fb_pixel(x, y + 1, true);
+    fb_pixel(x + 2, y + 1, true);
+    fb_pixel(x + 1, y + 2, true);
+}
+
+/* Render the large temperature centered horizontally at top y=cy. */
 static void draw_big_number(int cx, int cy, const char *str)
 {
     int scale = 3;
-    int w = (int)strlen(str) * (5 * scale + 1);
+    int w = text_width(str, scale);
     draw_text(cx - w / 2, cy, str, scale);
 }
 
@@ -118,37 +148,52 @@ static const char *mode_str(int mode)
     }
 }
 
+/* Draw a temperature value at (x,y) followed by a degree ring and C/F. */
+static int draw_temp_unit(int x, int y, int c100, bool fahrenheit, int scale)
+{
+    char buf[12];
+    fmt_temp(buf, sizeof(buf), c100, fahrenheit);
+    x = draw_text(x, y, buf, scale);
+    draw_degree(x + 1, y);
+    x = draw_text(x + 5, y, fahrenheit ? "F" : "C", scale);
+    return x;
+}
+
 /* ---- screen composition (geometry per docs/UI.md) ------------------------ */
 
 static void render_home(const ui_model_t *m)
 {
-    char buf[16];
     draw_text(0, 0, mode_str(m->mode), 1);                 /* top-left: mode */
-    draw_text(s.cfg.width - 18, 0, m->commissioned ? "net" : "---", 1);
+    draw_text(s.cfg.width - text_width(m->commissioned ? "NET" : "---", 1), 0,
+              m->commissioned ? "NET" : "---", 1);
 
+    /* Center the big temperature + unit together. */
+    char buf[12];
     fmt_temp(buf, sizeof(buf), m->temp_c100, m->fahrenheit);
-    draw_big_number(s.cfg.width / 2, 16, buf);             /* center: big temp */
+    int w = text_width(buf, 3) + 6 /*deg*/ + 6 * 3 /*unit*/;
+    draw_temp_unit((s.cfg.width - w) / 2, 14, m->temp_c100, m->fahrenheit, 3);
 
     int set = (m->active_setpoint == 1) ? m->cool_set_c100 : m->heat_set_c100;
-    fmt_temp(buf, sizeof(buf), set, m->fahrenheit);
-    char line[24];
-    snprintf(line, sizeof(line), "Set %s%s", buf,
-             m->calling_heat ? " ^" : (m->calling_cool ? " v" : ""));
-    draw_text(2, 44, line, 1);
+    const char *lbl = (m->mode == 3) ? (m->active_setpoint == 1 ? "COOL " : "HEAT ") : "SET ";
+    int x = draw_text(2, 44, lbl, 1);
+    x = draw_temp_unit(x, 44, set, m->fahrenheit, 1);
+    if (m->calling_heat)      draw_text(x + 4, 44, ">HEAT", 1);
+    else if (m->calling_cool) draw_text(x + 4, 44, ">COOL", 1);
 
     fb_hline(0, s.cfg.width - 1, 54, true);
-    const char *rs = m->calling_heat ? "heating" :
-                     (m->calling_cool ? "cooling" : (m->fan_on ? "fan" : "idle"));
+    const char *rs = m->calling_heat ? "HEATING" :
+                     (m->calling_cool ? "COOLING" : (m->fan_on ? "FAN" : "IDLE"));
     draw_text(2, 56, rs, 1);
 }
 
 static void render_adjust(const ui_model_t *m)
 {
-    char buf[16];
-    draw_text(2, 0, m->active_setpoint == 1 ? "Set cooling" : "Set heating", 1);
+    draw_text(2, 0, m->active_setpoint == 1 ? "SET COOLING" : "SET HEATING", 1);
     int set = (m->active_setpoint == 1) ? m->cool_set_c100 : m->heat_set_c100;
+    char buf[12];
     fmt_temp(buf, sizeof(buf), set, m->fahrenheit);
-    draw_big_number(s.cfg.width / 2, 20, buf);
+    int w = text_width(buf, 3) + 6 + 6 * 3;
+    draw_temp_unit((s.cfg.width - w) / 2, 18, set, m->fahrenheit, 3);
     /* limit bar */
     fb_rect(10, 54, s.cfg.width - 20, 8, true);
     fb_fill_rect(12, 56, (s.cfg.width - 24) / 2, 4, true);
@@ -156,27 +201,59 @@ static void render_adjust(const ui_model_t *m)
 
 static void render_menu(const ui_model_t *m)
 {
-    draw_text(2, 0, "Settings", 1);
+    draw_text(2, 0, "SETTINGS", 1);
     fb_hline(0, s.cfg.width - 1, 10, true);
-    draw_text(4, 20, m->menu_title ? m->menu_title : "", 1);
-    draw_text(4, 36, m->menu_value ? m->menu_value : "", 1);
+    int y = 14;
+    for (int i = 0; i < m->menu_count && i < UI_MENU_MAX; ++i) {
+        bool sel = (i == m->menu_index);
+        if (sel) {
+            fb_fill_rect(0, y - 1, s.cfg.width, 10, true);  /* highlight bar */
+        }
+        /* Draw text; where the highlight is on, invert by clearing pixels. */
+        int x0 = 4;
+        const char *txt = m->menu_lines[i] ? m->menu_lines[i] : "";
+        if (!sel) {
+            draw_text(x0, y, txt, 1);
+        } else {
+            /* Simple inverse: draw text then knock it back out of the bar. */
+            for (const char *c = txt; *c; ++c) {
+                char cc = *c;
+                if (cc >= 'a' && cc <= 'z') cc -= 32;
+                if (cc < FONT5X7_FIRST || cc > FONT5X7_LAST) cc = ' ';
+                const uint8_t *g = font5x7[(int)cc - FONT5X7_FIRST];
+                for (int col = 0; col < 5; ++col)
+                    for (int row = 0; row < 7; ++row)
+                        if (g[col] & (1u << row)) fb_pixel(x0 + col, y + row, false);
+                x0 += 6;
+            }
+        }
+        y += 10;
+    }
+}
+
+static void render_info(const ui_model_t *m)
+{
+    draw_text(2, 0, m->info_title ? m->info_title : "MATTER CODE", 1);
+    fb_hline(0, s.cfg.width - 1, 10, true);
+    if (m->info_line1) draw_text(2, 20, m->info_line1, 2);   /* big pairing code */
+    if (m->info_line2) draw_text(2, 44, m->info_line2, 1);
 }
 
 static void render_pairing(const ui_model_t *m)
 {
-    draw_text(2, 0, "Pair thermostat", 1);
+    draw_text(2, 0, "PAIR THERMOSTAT", 1);
     fb_rect(4, 14, 40, 40, true);                          /* QR placeholder box */
-    draw_text(52, 20, "Code:", 1);
+    draw_text(52, 20, "CODE:", 1);
     draw_text(52, 32, m->pairing_code ? m->pairing_code : "----", 1);
-    draw_text(2, 56, "Needs Thread BR", 1);
+    draw_text(2, 56, "NEEDS THREAD BR", 1);
 }
 
 static void render_fault(const ui_model_t *m)
 {
     (void)m;
     draw_text(2, 4, "! SENSOR FAULT", 1);
-    draw_text(2, 24, "Check room sensor", 1);
-    draw_text(2, 40, "Outputs disabled", 1);
+    draw_text(2, 24, "CHECK ROOM SENSOR", 1);
+    draw_text(2, 40, "OUTPUTS DISABLED", 1);
 }
 
 /* ---- public API ---------------------------------------------------------- */
@@ -235,12 +312,18 @@ void ui_oled_render(const ui_model_t *m)
 {
     if (!m || !s.ready) return;
     fb_clear();
-    ui_screen_t scr = m->fault ? UI_SCREEN_FAULT :
-                      (!m->commissioned ? UI_SCREEN_PAIRING : m->screen);
+    /* Fault always wins (safety). Pairing replaces HOME while uncommissioned,
+     * but the settings menu/info stay reachable so units/sensor type can be set
+     * before pairing. */
+    ui_screen_t scr;
+    if (m->fault) scr = UI_SCREEN_FAULT;
+    else if (!m->commissioned && m->screen == UI_SCREEN_HOME) scr = UI_SCREEN_PAIRING;
+    else scr = (ui_screen_t)m->screen;
     switch (scr) {
         case UI_SCREEN_HOME:    render_home(m);    break;
         case UI_SCREEN_ADJUST:  render_adjust(m);  break;
         case UI_SCREEN_MENU:    render_menu(m);    break;
+        case UI_SCREEN_INFO:    render_info(m);    break;
         case UI_SCREEN_PAIRING: render_pairing(m); break;
         case UI_SCREEN_FAULT:   render_fault(m);   break;
     }
