@@ -14,6 +14,11 @@
 
 void app_config_defaults(app_config_t *cfg)
 {
+#if CONFIG_THERMO_SENSOR_SHT40
+    cfg->sensor_kind   = SENSOR_KIND_SHT40;
+#else
+    cfg->sensor_kind   = SENSOR_KIND_NTC;
+#endif
     cfg->mode          = THERMO_MODE_OFF;
     cfg->heat_set_c100 = CONFIG_THERMO_DEFAULT_HEAT_SET_C10 * 10;
     cfg->cool_set_c100 = CONFIG_THERMO_DEFAULT_COOL_SET_C10 * 10;
@@ -64,6 +69,7 @@ int app_nvs_load(app_config_t *cfg)
         ESP_LOGI(TAG, "no saved config; using defaults");
         return ESP_OK;
     }
+    get_i32(h, "sensor",   &cfg->sensor_kind);
     get_i32(h, "mode",     &cfg->mode);
     get_i32(h, "heat",     &cfg->heat_set_c100);
     get_i32(h, "cool",     &cfg->cool_set_c100);
@@ -91,6 +97,7 @@ int app_nvs_save(const app_config_t *cfg)
     esp_err_t err = nvs_open(NS, NVS_READWRITE, &h);
     if (err != ESP_OK) return err;
 
+    nvs_set_i32(h, "sensor",   cfg->sensor_kind);
     nvs_set_i32(h, "mode",     cfg->mode);
     nvs_set_i32(h, "heat",     cfg->heat_set_c100);
     nvs_set_i32(h, "cool",     cfg->cool_set_c100);

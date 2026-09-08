@@ -70,10 +70,30 @@ menu "Matter Thermostat"
             default 9
     endmenu
 
-    menu "Thermistor / sensing"
+    menu "Temperature / humidity sensor"
+        choice THERMO_SENSOR_KIND
+            prompt "Room sensor"
+            default THERMO_SENSOR_NTC
+            help
+                Which physical room sensor is populated. The SHT40 also provides
+                relative humidity (exposed as a Matter Humidity Sensor).
+            config THERMO_SENSOR_NTC
+                bool "10K NTC thermistor (Type 2/3) — temperature only"
+            config THERMO_SENSOR_SHT40
+                bool "SHT40 I2C sensor — temperature + humidity"
+        endchoice
+
+        config THERMO_SHT40_ADDR
+            hex "SHT40 I2C address"
+            default 0x44
+            depends on THERMO_SENSOR_SHT40
+            help
+                0x44 for SHT40-AD1B (default), 0x45 for -BD1B. Shares the OLED bus.
+
         choice THERMO_NTC_TYPE
             prompt "NTC curve"
             default THERMO_NTC_TYPE3
+            depends on THERMO_SENSOR_NTC
             config THERMO_NTC_TYPE2
                 bool "10K Type 2 (10K-2)"
             config THERMO_NTC_TYPE3

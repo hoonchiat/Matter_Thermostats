@@ -305,10 +305,22 @@ static void render_home(const ui_model_t *m)
                      (m->calling_cool ? "COOLING" : (m->fan_on ? "FAN ON" : "IDLE"));
     draw_text(2, 56, rs, 1);
 
-    /* Away indicator (occupancy setback active). */
+    /* Bottom-right cluster: AWAY badge, then humidity (right-aligned). */
+    int rx = s.cfg.width - 2;
     if (!m->occupied) {
         const char *aw = "AWAY";
-        draw_text(s.cfg.width - text_width(aw, 1) - 2, 56, aw, 1);
+        rx -= text_width(aw, 1);
+        draw_text(rx, 56, aw, 1);
+        rx -= 4;
+    }
+    if (m->humidity_valid) {
+        char hb[16];
+        int rh = (m->humidity_pct100 + 50) / 100;
+        if (rh < 0)   rh = 0;
+        if (rh > 100) rh = 100;
+        snprintf(hb, sizeof(hb), "%d%%", rh);
+        rx -= text_width(hb, 1);
+        draw_text(rx, 56, hb, 1);
     }
 }
 
@@ -413,15 +425,21 @@ int ui_oled_init(const ui_oled_config_t *cfg)
     fb_clear();
     return ESP_OK;
 #else
-    i2c_master_bus_config_t bus_cfg = {
-        .i2c_port = s.cfg.i2c_port,
-        .sda_io_num = s.cfg.sda_gpio,
-        .scl_io_num = s.cfg.scl_gpio,
-        .clk_source = I2C_CLK_SRC_DEFAULT,
-        .flags.enable_internal_pullup = true,
-    };
-    esp_err_t err = i2c_new_master_bus(&bus_cfg, &s.bus);
-    if (err != ESP_OK) { ESP_LOGE(TAG, "i2c bus: %s", esp_err_to_name(err)); return err; }
+    esp_err_t err;
+    if (s.cfg.ext_bus) {
+        /* Reuse a bus the app already created (shared with the SHT40). */
+        s.bus = (i2c_master_bus_handle_t)s.cfg.ext_bus;
+    } else {
+        i2c_master_bus_config_t bus_cfg = {
+            .i2c_port = s.cfg.i2c_port,
+            .sda_io_num = s.cfg.sda_gpio,
+            .scl_io_num = s.cfg.scl_gpio,
+            .clk_source = I2C_CLK_SRC_DEFAULT,
+            .flags.enable_internal_pullup = true,
+        };
+        err = i2c_new_master_bus(&bus_cfg, &s.bus);
+        if (err != ESP_OK) { ESP_LOGE(TAG, "i2c bus: %s", esp_err_to_name(err)); return err; }
+    }
 
     esp_lcd_panel_io_i2c_config_t io_cfg = {
         .dev_addr = s.cfg.addr,

@@ -33,6 +33,7 @@ using namespace chip::app::Clusters;
 static uint16_t s_ep = 0;       /* thermostat endpoint id */
 static uint16_t s_fan_ep = 0;   /* fan (Fan Control) endpoint id */
 static uint16_t s_occ_ep = 0;   /* occupancy sensor endpoint id */
+static uint16_t s_hum_ep = 0;   /* humidity sensor endpoint id (SHT40 only) */
 
 /* ---- mode conversion (Matter SystemMode <-> thermo_mode_t) ---------------- */
 
@@ -253,6 +254,20 @@ int app_matter_start(void)
     if (!oep) { ESP_LOGE(TAG, "occupancy endpoint failed"); return ESP_FAIL; }
     s_occ_ep = endpoint::get_id(oep);
 
+    /* Endpoint 4: a Humidity Sensor (0x0307) — only when an SHT40 is fitted, so
+     * the data model doesn't advertise humidity the hardware can't measure. */
+    app_lock();
+    bool has_humidity = (g_state.cfg.sensor_kind == SENSOR_KIND_SHT40);
+    app_unlock();
+    if (has_humidity) {
+        /* TODO(matter): humidity_sensor::config_t field names track the SDK
+         * version (e.g. relative_humidity_measurement.measured_value). */
+        humidity_sensor::config_t hum_cfg;
+        endpoint_t *hep = humidity_sensor::create(node, &hum_cfg, ENDPOINT_FLAG_NONE, NULL);
+        if (!hep) { ESP_LOGE(TAG, "humidity endpoint failed"); return ESP_FAIL; }
+        s_hum_ep = endpoint::get_id(hep);
+    }
+
     esp_matter::start(app_device_event_cb);
 
     /* Print the QR + manual pairing code to the console, same as the light
@@ -265,8 +280,8 @@ int app_matter_start(void)
     esp_matter::console::init();
 #endif
 
-    ESP_LOGI(TAG, "matter started: thermostat ep=%u, fan ep=%u, occ ep=%u",
-             s_ep, s_fan_ep, s_occ_ep);
+    ESP_LOGI(TAG, "matter started: thermostat ep=%u, fan ep=%u, occ ep=%u, hum ep=%u",
+             s_ep, s_fan_ep, s_occ_ep, s_hum_ep);
     return ESP_OK;
 }
 
@@ -288,6 +303,19 @@ void app_matter_report_temperature(int temp_c100, bool fault)
         val = esp_matter_nullable_int16(nullable<int16_t>((int16_t)temp_c100));
     }
     attribute::update(s_ep, Thermostat::Id, Thermostat::Attributes::LocalTemperature::Id, &val);
+}
+
+void app_matter_report_humidity(int pct100, bool valid)
+{
+    if (!s_hum_ep) return;
+    esp_matter_attr_val_t val;
+    if (valid) {
+        val = esp_matter_nullable_uint16(nullable<uint16_t>((uint16_t)pct100));
+    } else {
+        val = esp_matter_nullable_uint16(nullable<uint16_t>());          /* null */
+    }
+    attribute::update(s_hum_ep, RelativeHumidityMeasurement::Id,
+                      RelativeHumidityMeasurement::Attributes::MeasuredValue::Id, &val);
 }
 
 void app_matter_report_running_state(bool heat, bool cool, bool fan)

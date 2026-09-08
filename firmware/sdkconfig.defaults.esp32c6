@@ -7,6 +7,12 @@ CONFIG_OPENTHREAD_ENABLED=y
 CONFIG_OPENTHREAD_SRP_CLIENT_ENABLE=y
 CONFIG_OPENTHREAD_DNS_CLIENT_ENABLE=y
 
+# Build as a Full Thread Device (router-eligible), NOT a Minimal/Sleepy device.
+# This mains-powered thermostat then joins as a REED and can be promoted to an
+# active Thread Router, relaying for neighbors and extending the mesh range.
+# (Do not enable CONFIG_OPENTHREAD_MTD / sleepy-end-device for this design.)
+CONFIG_OPENTHREAD_FTD=y
+
 # BLE is used only during commissioning, then released.
 CONFIG_BT_ENABLED=y
 CONFIG_BT_NIMBLE_ENABLED=y

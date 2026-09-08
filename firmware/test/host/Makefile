@@ -10,14 +10,17 @@ LDLIBS  ?= -lm
 THERM_INC := -I../../components/thermistor/include
 CORE_INC  := -I../../components/thermostat_core/include
 OCC_INC   := -I../../components/occupancy/include
+SHT_INC   := -I../../components/sht4x/include
 
 .PHONY: all test clean preview
 all: test
 
-test: test_thermistor test_thermostat_core test_occupancy
+test: test_thermistor test_thermostat_core test_occupancy test_sht4x test_ui
 	@echo "=== thermistor ===";      ./test_thermistor
 	@echo "=== thermostat_core ==="; ./test_thermostat_core
 	@echo "=== occupancy ===";       ./test_occupancy
+	@echo "=== sht4x ===";           ./test_sht4x
+	@echo "=== ui ===";              ./test_ui
 
 # Render the OLED screens to the terminal as ASCII (no hardware needed).
 preview: preview_ui
@@ -35,5 +38,16 @@ test_thermostat_core: test_thermostat_core.c ../../components/thermostat_core/th
 test_occupancy: test_occupancy.c ../../components/occupancy/occupancy_logic.c
 	$(CC) $(CFLAGS) $(OCC_INC) $^ -o $@ $(LDLIBS)
 
+test_sht4x: test_sht4x.c ../../components/sht4x/sht4x_logic.c
+	$(CC) $(CFLAGS) $(SHT_INC) $^ -o $@ $(LDLIBS)
+
+test_ui: test_ui.c ../../components/ui_oled/ui_oled.c ../../components/ui_oled/font5x7.inc
+	$(CC) -DUI_OLED_HOST $(CFLAGS) -I../../components/ui_oled/include test_ui.c -o $@ $(LDLIBS)
+
+# Emit every OLED screen's framebuffer as base64 JSON (feeds the user guide).
+render_screens: render_screens.c ../../components/ui_oled/ui_oled.c ../../components/ui_oled/font5x7.inc
+	$(CC) -DUI_OLED_HOST $(CFLAGS) -I../../components/ui_oled/include render_screens.c -o $@ $(LDLIBS)
+
 clean:
-	rm -f test_thermistor test_thermostat_core test_occupancy preview_ui
+	rm -f test_thermistor test_thermostat_core test_occupancy test_sht4x test_ui \
+	      render_screens preview_ui

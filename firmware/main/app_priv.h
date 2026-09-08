@@ -19,6 +19,7 @@ extern "C" {
 
 /* ---- persisted user configuration (NVS namespace "thermo_cfg") ------------ */
 typedef struct {
+    int  sensor_kind;       /* sensor_kind_t: 0=NTC, 1=SHT40     */
     int  mode;              /* thermo_mode_t                     */
     int  heat_set_c100;     /* 0.01 C                            */
     int  cool_set_c100;     /* 0.01 C                            */
@@ -40,11 +41,16 @@ typedef struct {
 /* Occupancy source. */
 typedef enum { OCC_SRC_MANUAL = 0, OCC_SRC_SENSOR = 1 } occ_source_t;
 
+/* Room sensor kind. */
+typedef enum { SENSOR_KIND_NTC = 0, SENSOR_KIND_SHT40 = 1 } sensor_kind_t;
+
 /* ---- live application state (single source of truth) ---------------------- */
 typedef struct {
     app_config_t cfg;
 
     int  temp_c100;         /* measured room temp, 0.01 C        */
+    int  humidity_pct100;   /* relative humidity, 0.01 % (SHT40) */
+    bool humidity_valid;    /* humidity available (SHT40, no fault) */
     bool fault;             /* sensor fault                      */
 
     bool calling_heat;
@@ -101,6 +107,7 @@ int  app_nvs_save(const app_config_t *cfg);/* debounced writer inside   */
 
 int  app_matter_start(void);               /* create endpoints + start stack */
 void app_matter_report_temperature(int temp_c100, bool fault);
+void app_matter_report_humidity(int pct100, bool valid);   /* Relative Humidity Measurement */
 void app_matter_report_running_state(bool heat, bool cool, bool fan);
 void app_matter_report_setpoints(int heat_c100, int cool_c100);
 void app_matter_report_unocc_setpoints(int heat_c100, int cool_c100);
