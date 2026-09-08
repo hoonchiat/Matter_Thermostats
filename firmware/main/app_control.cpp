@@ -32,15 +32,28 @@ static int64_t s_last_adjust_ms;   /* for ADJUST auto-timeout                  *
 
 /* Settings-menu items (order = on-screen order). */
 enum {
-    MENU_UNITS = 0,     /* °C / °F                    */
+    MENU_FAN = 0,       /* fan speed: AUTO / LOW / MED / HIGH */
+    MENU_UNITS,         /* °C / °F                    */
     MENU_SENSOR,        /* NTC Type 2 / Type 3        */
     MENU_MATTER_CODE,   /* view Matter pairing code   */
     MENU_BACK,          /* return to home             */
     MENU_COUNT,
 };
 
+static const char *fan_speed_name(int s)
+{
+    switch (s) {
+        case THERMO_FAN_LOW:  return "LOW";
+        case THERMO_FAN_MED:  return "MED";
+        case THERMO_FAN_HIGH: return "HIGH";
+        case THERMO_FAN_AUTO:
+        default:              return "AUTO";
+    }
+}
+
 /* Persistent buffers backing the UI model's string pointers (ui_task only). */
 static char s_code[24];
+static char s_menu_fan[20];
 static char s_menu_units[20];
 static char s_menu_sensor[20];
 static const char *s_menu_lines[UI_MENU_MAX];
@@ -113,6 +126,9 @@ static void control_task(void *arg)
         .gpio_y  = CONFIG_THERMO_PIN_RELAY_Y,
         .gpio_g  = CONFIG_THERMO_PIN_RELAY_G,
         .gpio_ob = CONFIG_THERMO_PIN_RELAY_OB,
+        .gpio_g_low  = CONFIG_THERMO_PIN_FAN_LOW,
+        .gpio_g_med  = CONFIG_THERMO_PIN_FAN_MED,
+        .gpio_g_high = CONFIG_THERMO_PIN_FAN_HIGH,
         .active_high = true,
     };
     relays_init(&rc);
@@ -136,6 +152,7 @@ static void control_task(void *arg)
         tcfg.min_on_s  = cfg.min_on_s;
         tcfg.startup_lockout_s = CONFIG_THERMO_STARTUP_LOCKOUT_S;
         tcfg.hp_mode   = (thermo_hp_mode_t)cfg.hp_reversing;
+        tcfg.fan_call_speed = CONFIG_THERMO_FAN_CALL_SPEED;
 
         thermo_input_t in = {
             .mode        = (thermo_mode_t)cfg.mode,
@@ -143,13 +160,14 @@ static void control_task(void *arg)
             .heat_set_c  = cfg.heat_set_c100 / 100.0f,
             .cool_set_c  = cfg.cool_set_c100 / 100.0f,
             .fault       = fault,
-            .fan_request = false,
+            .fan_speed   = cfg.fan_speed,
             .now_ms      = (uint64_t)now_ms(),
         };
         thermo_output_t out = thermo_core_step(&tcfg, &in, &core);
 
         relays_state_t rs = { .w = out.w_heat, .y = out.y_cool,
-                              .g = out.g_fan, .ob = out.ob_reversing };
+                              .g = out.g_fan, .ob = out.ob_reversing,
+                              .fan_level = out.fan_level };
         relays_apply(&rs);
 
         app_lock();
@@ -219,9 +237,15 @@ static void adjust_setpoint(int delta)
 }
 
 /* Act on the selected settings-menu row. Sets change flags for the caller. */
-static void menu_activate(bool *changed_units, bool *changed_sensor, bool *save)
+static void menu_activate(bool *changed_units, bool *changed_sensor,
+                          bool *changed_fan, bool *save)
 {
     switch (g_state.menu_index) {
+        case MENU_FAN:
+            /* cycle AUTO -> LOW -> MED -> HIGH -> AUTO */
+            g_state.cfg.fan_speed = (g_state.cfg.fan_speed + 1) % 4;
+            *changed_fan = true; *save = true;
+            break;
         case MENU_UNITS:
             g_state.cfg.fahrenheit = !g_state.cfg.fahrenheit;
             *changed_units = true; *save = true;
@@ -244,7 +268,7 @@ static void menu_activate(bool *changed_units, bool *changed_sensor, bool *save)
 static void handle_event(const app_event_t *e)
 {
     bool changed_setpoints = false, changed_mode = false;
-    bool changed_units = false, changed_sensor = false, save = false;
+    bool changed_units = false, changed_sensor = false, changed_fan = false, save = false;
 
     app_lock();
     int scr = g_state.screen;
@@ -263,7 +287,7 @@ static void handle_event(const app_event_t *e)
 
         case EVT_ENC_SW_SHORT:                     /* select / confirm */
             if (scr == UI_SCREEN_MENU) {
-                menu_activate(&changed_units, &changed_sensor, &save);
+                menu_activate(&changed_units, &changed_sensor, &changed_fan, &save);
             } else if (scr == UI_SCREEN_INFO) {
                 g_state.screen = UI_SCREEN_MENU;   /* back to the list */
             } else {
@@ -310,6 +334,9 @@ static void handle_event(const app_event_t *e)
             g_state.cfg.cool_set_c100 = clampi(e->value, COOL_MIN, COOL_MAX); save = true; break;
         case EVT_MATTER_SET_UNITS:
             g_state.cfg.fahrenheit = (e->value != 0); save = true; break;
+        case EVT_MATTER_SET_FAN:
+            g_state.cfg.fan_speed = clampi(e->value, THERMO_FAN_AUTO, THERMO_FAN_HIGH);
+            save = true; break;
         case EVT_MATTER_COMMISSIONED:
             g_state.commissioned = (e->value != 0);
             g_state.screen = UI_SCREEN_HOME;
@@ -322,6 +349,7 @@ static void handle_event(const app_event_t *e)
     if (changed_setpoints) app_matter_report_setpoints(snapshot.heat_set_c100, snapshot.cool_set_c100);
     if (changed_mode)      app_matter_report_mode(snapshot.mode);
     if (changed_units)     app_matter_report_units(snapshot.fahrenheit);
+    if (changed_fan)       app_matter_report_fan(snapshot.fan_speed);
     if (changed_sensor)    thermistor_set_type((ntc_type_t)snapshot.ntc_type);
     if (save)              app_nvs_save(&snapshot);
 }
@@ -330,7 +358,7 @@ static void handle_event(const app_event_t *e)
 
 static void build_model(ui_model_t *m)
 {
-    int ntc_type;
+    int ntc_type, fan_speed;
     app_lock();
     m->temp_c100      = g_state.temp_c100;
     m->heat_set_c100  = g_state.cfg.heat_set_c100;
@@ -340,6 +368,7 @@ static void build_model(ui_model_t *m)
     m->calling_heat   = g_state.calling_heat;
     m->calling_cool   = g_state.calling_cool;
     m->fan_on         = g_state.fan_on;
+    m->fan_speed      = g_state.cfg.fan_speed;
     m->fault          = g_state.fault;
     m->commissioned   = g_state.commissioned;
     m->thread_rssi    = g_state.thread_rssi;
@@ -347,6 +376,7 @@ static void build_model(ui_model_t *m)
     m->active_setpoint= g_state.active_setpoint;
     m->menu_index     = g_state.menu_index;
     ntc_type          = g_state.cfg.ntc_type;
+    fan_speed         = g_state.cfg.fan_speed;
     app_unlock();
 
     /* Matter setup payload — available whether or not we're commissioned, so
@@ -356,9 +386,11 @@ static void build_model(ui_model_t *m)
     m->pairing_code = s_code;
 
     /* Settings-menu lines (LABEL: VALUE). */
+    snprintf(s_menu_fan,    sizeof(s_menu_fan),    "FAN: %s", fan_speed_name(fan_speed));
     snprintf(s_menu_units,  sizeof(s_menu_units),  "UNITS: %s", m->fahrenheit ? "F" : "C");
     snprintf(s_menu_sensor, sizeof(s_menu_sensor), "SENSOR: TYPE %d",
              ntc_type == NTC_TYPE_2 ? 2 : 3);
+    s_menu_lines[MENU_FAN]         = s_menu_fan;
     s_menu_lines[MENU_UNITS]       = s_menu_units;
     s_menu_lines[MENU_SENSOR]      = s_menu_sensor;
     s_menu_lines[MENU_MATTER_CODE] = "MATTER CODE >";

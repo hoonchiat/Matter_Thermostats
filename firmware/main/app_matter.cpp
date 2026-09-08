@@ -17,6 +17,7 @@
 #include "esp_matter_ota.h"
 
 #include <app/server/OnboardingCodesUtil.h>
+#include <app/server/Server.h>
 #include <setup_payload/ManualSetupPayloadGenerator.h>
 #include <setup_payload/SetupPayload.h>
 #include <platform/CommissionableDataProvider.h>
@@ -29,7 +30,8 @@ using namespace chip::app::Clusters;
 
 #define TAG "app_matter"
 
-static uint16_t s_ep = 0;   /* thermostat endpoint id */
+static uint16_t s_ep = 0;       /* thermostat endpoint id */
+static uint16_t s_fan_ep = 0;   /* fan (Fan Control) endpoint id */
 
 /* ---- mode conversion (Matter SystemMode <-> thermo_mode_t) ---------------- */
 
@@ -57,6 +59,31 @@ static uint8_t mode_to_matter(int mode)
     }
 }
 
+/* ---- fan conversion (Matter FanControl::FanMode <-> thermo_fan_speed_t) ----
+ * FanMode: Off=0, Low=1, Medium=2, High=3, On=4, Auto=5, Smart=6.            */
+static int matter_to_fan(uint8_t fan_mode)
+{
+    switch (fan_mode) {
+        case 1:  return THERMO_FAN_LOW;
+        case 2:  return THERMO_FAN_MED;
+        case 3:  return THERMO_FAN_HIGH;
+        case 4:  return THERMO_FAN_HIGH;   /* On    -> High */
+        case 0:                            /* Off   -> Auto (fan follows call) */
+        case 5:                            /* Auto  -> Auto */
+        default: return THERMO_FAN_AUTO;
+    }
+}
+static uint8_t fan_to_matter(int fan_speed)
+{
+    switch (fan_speed) {
+        case THERMO_FAN_LOW:  return 1;
+        case THERMO_FAN_MED:  return 2;
+        case THERMO_FAN_HIGH: return 3;
+        case THERMO_FAN_AUTO:
+        default:              return 5;    /* Auto */
+    }
+}
+
 /* ---- callbacks ------------------------------------------------------------ */
 
 /* Remote writes land here (PRE_UPDATE = before the stack commits the value). */
@@ -64,20 +91,37 @@ static esp_err_t app_attribute_update_cb(callback_type_t type, uint16_t endpoint
                                          uint32_t cluster_id, uint32_t attribute_id,
                                          esp_matter_attr_val_t *val, void *priv)
 {
-    if (type != PRE_UPDATE || endpoint_id != s_ep) return ESP_OK;
+    if (type != PRE_UPDATE) return ESP_OK;
 
-    if (cluster_id == Thermostat::Id) {
-        if (attribute_id == Thermostat::Attributes::SystemMode::Id) {
-            app_post_event(EVT_MATTER_SET_MODE, matter_to_mode(val->val.u8));
-        } else if (attribute_id == Thermostat::Attributes::OccupiedHeatingSetpoint::Id) {
-            app_post_event(EVT_MATTER_SET_HEAT, val->val.i16);
-        } else if (attribute_id == Thermostat::Attributes::OccupiedCoolingSetpoint::Id) {
-            app_post_event(EVT_MATTER_SET_COOL, val->val.i16);
+    /* --- Thermostat endpoint: mode / setpoints / display units (remote override) */
+    if (endpoint_id == s_ep) {
+        if (cluster_id == Thermostat::Id) {
+            if (attribute_id == Thermostat::Attributes::SystemMode::Id) {
+                app_post_event(EVT_MATTER_SET_MODE, matter_to_mode(val->val.u8));
+            } else if (attribute_id == Thermostat::Attributes::OccupiedHeatingSetpoint::Id) {
+                app_post_event(EVT_MATTER_SET_HEAT, val->val.i16);
+            } else if (attribute_id == Thermostat::Attributes::OccupiedCoolingSetpoint::Id) {
+                app_post_event(EVT_MATTER_SET_COOL, val->val.i16);
+            }
+        } else if (cluster_id == ThermostatUserInterfaceConfiguration::Id) {
+            if (attribute_id ==
+                ThermostatUserInterfaceConfiguration::Attributes::TemperatureDisplayMode::Id) {
+                app_post_event(EVT_MATTER_SET_UNITS, val->val.u8 /* 0=C, 1=F */);
+            }
         }
-    } else if (cluster_id == ThermostatUserInterfaceConfiguration::Id) {
-        if (attribute_id ==
-            ThermostatUserInterfaceConfiguration::Attributes::TemperatureDisplayMode::Id) {
-            app_post_event(EVT_MATTER_SET_UNITS, val->val.u8 /* 0=C, 1=F */);
+    }
+    /* --- Fan endpoint: fan speed (remote override) ------------------------- */
+    else if (endpoint_id == s_fan_ep && cluster_id == FanControl::Id) {
+        if (attribute_id == FanControl::Attributes::FanMode::Id) {
+            app_post_event(EVT_MATTER_SET_FAN, matter_to_fan(val->val.u8));
+        } else if (attribute_id == FanControl::Attributes::PercentSetting::Id) {
+            /* Map a 0..100% request onto our discrete levels. */
+            int pct = val->val.u8;
+            int lvl = (pct == 0) ? THERMO_FAN_AUTO
+                    : (pct <= 33) ? THERMO_FAN_LOW
+                    : (pct <= 66) ? THERMO_FAN_MED
+                                  : THERMO_FAN_HIGH;
+            app_post_event(EVT_MATTER_SET_FAN, lvl);
         }
     }
     return ESP_OK;
@@ -92,7 +136,10 @@ static esp_err_t app_identification_cb(identification::callback_type_t type,
     return ESP_OK;
 }
 
-/* CHIP device events (commissioning / connectivity). */
+/* CHIP device events (commissioning / connectivity).
+ * Mirrors the esp-matter `light` example's app_event_cb so pairing behaves
+ * identically: BLE commissioning, and on the last fabric being removed we
+ * re-open a (DNS-SD) basic commissioning window so the device can be re-added. */
 static void app_device_event_cb(const ChipDeviceEvent *event, intptr_t arg)
 {
     switch (event->Type) {
@@ -103,13 +150,32 @@ static void app_device_event_cb(const ChipDeviceEvent *event, intptr_t arg)
         case chip::DeviceLayer::DeviceEventType::kThreadConnectivityChange:
             ESP_LOGI(TAG, "thread connectivity change");
             break;
-        case chip::DeviceLayer::DeviceEventType::kFabricRemoved:
+        case chip::DeviceLayer::DeviceEventType::kInterfaceIpAddressChanged:
+            ESP_LOGI(TAG, "interface IP address changed");
+            break;
+        case chip::DeviceLayer::DeviceEventType::kBLEDeinitialized:
+            ESP_LOGI(TAG, "BLE deinitialized and memory reclaimed");
+            break;
+        case chip::DeviceLayer::DeviceEventType::kCommissioningWindowOpened:
+            ESP_LOGI(TAG, "commissioning window opened");
+            break;
+        case chip::DeviceLayer::DeviceEventType::kCommissioningWindowClosed:
+            ESP_LOGI(TAG, "commissioning window closed");
+            break;
+        case chip::DeviceLayer::DeviceEventType::kFabricRemoved: {
             ESP_LOGI(TAG, "fabric removed");
-            /* If no fabrics remain, we're effectively uncommissioned again. */
             if (chip::Server::GetInstance().GetFabricTable().FabricCount() == 0) {
                 app_post_event(EVT_MATTER_COMMISSIONED, 0);
+                /* Re-open commissioning (DNS-SD only) like the light example. */
+                auto &mgr = chip::Server::GetInstance().GetCommissioningWindowManager();
+                constexpr auto kTimeout = chip::System::Clock::Seconds16(300);
+                if (!mgr.IsCommissioningWindowOpen()) {
+                    mgr.OpenBasicCommissioningWindow(
+                        kTimeout, chip::CommissioningWindowAdvertisement::kDnssdOnly);
+                }
             }
             break;
+        }
         default:
             break;
     }
@@ -144,14 +210,34 @@ int app_matter_start(void)
      *   cluster::thermostat::feature::auto_mode::add(...);
      * See docs/MATTER.md for the exact attribute set. */
 
+    /* Endpoint 2: a Fan device (0x002B) exposing the Fan Control cluster so the
+     * fan speed (Auto/Low/Med/High) can be viewed and OVERRIDDEN from Matter. */
+    fan::config_t fan_cfg;
+    app_lock();
+    fan_cfg.fan_control.fan_mode = fan_to_matter(g_state.cfg.fan_speed);
+    app_unlock();
+    /* FanModeSequence = 2 => Off/Low/Med/High/Auto (matches our levels). */
+    fan_cfg.fan_control.fan_mode_sequence = 2;
+    endpoint_t *fep = fan::create(node, &fan_cfg, ENDPOINT_FLAG_NONE, NULL);
+    if (!fep) { ESP_LOGE(TAG, "fan endpoint failed"); return ESP_FAIL; }
+    s_fan_ep = endpoint::get_id(fep);
+    /* TODO(matter): if your esp-matter version needs it, add the FanControl
+     * AUTO feature (cluster::fan_control::feature::auto::add(...)) so FanMode
+     * Auto is advertised as supported. */
+
     esp_matter::start(app_device_event_cb);
+
+    /* Print the QR + manual pairing code to the console, same as the light
+     * example. Commissioning is BLE, then the device joins Thread. */
+    PrintOnboardingCodes(
+        chip::RendezvousInformationFlags(chip::RendezvousInformationFlag::kBLE));
 
 #if CONFIG_ENABLE_CHIP_SHELL
     esp_matter::console::diagnostics_register_commands();
     esp_matter::console::init();
 #endif
 
-    ESP_LOGI(TAG, "matter started, thermostat endpoint=%u", s_ep);
+    ESP_LOGI(TAG, "matter started: thermostat ep=%u, fan ep=%u", s_ep, s_fan_ep);
     return ESP_OK;
 }
 
@@ -205,6 +291,13 @@ void app_matter_report_units(bool fahrenheit)
     attribute::update(s_ep, ThermostatUserInterfaceConfiguration::Id,
                       ThermostatUserInterfaceConfiguration::Attributes::TemperatureDisplayMode::Id,
                       &val);
+}
+
+void app_matter_report_fan(int fan_speed)
+{
+    if (!s_fan_ep) return;
+    esp_matter_attr_val_t val = esp_matter_enum8(fan_to_matter(fan_speed));
+    attribute::update(s_fan_ep, FanControl::Id, FanControl::Attributes::FanMode::Id, &val);
 }
 
 void app_matter_factory_reset(void)

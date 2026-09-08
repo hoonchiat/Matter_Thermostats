@@ -1,23 +1,38 @@
 /*
- * ui_oled.c — panel bring-up + framebuffer + primitives.
+ * ui_oled.c — panel bring-up + framebuffer + primitives + screen rendering.
  *
  * Panel init uses the ESP-IDF new I2C master driver and the esp_lcd_ssd1306
  * managed component. The framebuffer is a 1bpp, page-addressed buffer matching
  * SSD1306/SH1106 layout (each byte = 8 vertical pixels of one column/page).
+ * Text is drawn with the built-in 5x7 font (font5x7.inc).
  *
- * TEXT RENDERING: intentionally a plug-in point. Wire a font table into
- * draw_text()/draw_big_number() (a compact 5x7 ASCII font, or LVGL). The layout
- * geometry for each screen is implemented per docs/UI.md; only glyph blitting is
- * stubbed, clearly marked with TODO(font).
+ * The pure drawing/rendering path (framebuffer + font + screen composition)
+ * compiles on a host PC when UI_OLED_HOST is defined, so the layout can be
+ * previewed as ASCII without hardware (see test/host/preview_ui.c). Only the
+ * I2C / esp_lcd panel bring-up and flush are compiled out in that mode.
  */
 #include "ui_oled.h"
 
 #include <string.h>
+#include <stdio.h>
+
+#ifdef UI_OLED_HOST
+typedef int esp_err_t;
+#define ESP_OK 0
+#define ESP_ERR_INVALID_ARG 1
+typedef void *i2c_master_bus_handle_t;
+typedef void *esp_lcd_panel_io_handle_t;
+typedef void *esp_lcd_panel_handle_t;
+#define ESP_LOGI(...) ((void)0)
+#define ESP_LOGW(...) ((void)0)
+#define ESP_LOGE(...) ((void)0)
+#else
 #include "esp_log.h"
 #include "driver/i2c_master.h"
 #include "esp_lcd_panel_io.h"
 #include "esp_lcd_panel_ops.h"
 #include "esp_lcd_panel_ssd1306.h"
+#endif
 
 #define TAG "ui_oled"
 #define FB_MAX (128 * 64 / 8)
@@ -28,6 +43,7 @@ static struct {
     esp_lcd_panel_io_handle_t io;
     esp_lcd_panel_handle_t panel;
     uint8_t fb[FB_MAX];
+    uint32_t tick;          /* increments per render, drives the fan animation */
     bool ready;
 } s;
 
@@ -66,8 +82,10 @@ static void fb_fill_rect(int x, int y, int w, int h, bool on)
 static void fb_flush(void)
 {
     if (!s.ready) return;
+#ifndef UI_OLED_HOST
     /* esp_lcd expects a bitmap covering the region; push the whole frame. */
     esp_lcd_panel_draw_bitmap(s.panel, 0, 0, s.cfg.width, s.cfg.height, s.fb);
+#endif
 }
 
 /* ---- text (5x7 font) ----------------------------------------------------- */
@@ -116,12 +134,71 @@ static void draw_degree(int x, int y)
     fb_pixel(x + 1, y + 2, true);
 }
 
-/* Render the large temperature centered horizontally at top y=cy. */
-static void draw_big_number(int cx, int cy, const char *str)
+/* ---- icons / decor ------------------------------------------------------- */
+
+/* Rounded rectangle outline (corners clipped for a softer, modern look). */
+static void draw_round_rect(int x, int y, int w, int h)
 {
-    int scale = 3;
-    int w = text_width(str, scale);
-    draw_text(cx - w / 2, cy, str, scale);
+    fb_hline(x + 1, x + w - 2, y, true);
+    fb_hline(x + 1, x + w - 2, y + h - 1, true);
+    for (int j = 1; j < h - 1; ++j) { fb_pixel(x, y + j, true); fb_pixel(x + w - 1, y + j, true); }
+}
+
+/* Filled triangles used as heat (apex up) / cool (apex down) indicators. */
+static void draw_tri_up(int cx, int y, int hgt)
+{
+    for (int r = 0; r < hgt; ++r) fb_hline(cx - r, cx + r, y + r, true);   /* narrow top */
+}
+static void draw_tri_down(int cx, int y, int hgt)
+{
+    for (int r = 0; r < hgt; ++r)
+        fb_hline(cx - (hgt - 1 - r), cx + (hgt - 1 - r), y + r, true);     /* narrow bottom */
+}
+
+/* 8x8 icon blit (MSB = leftmost column). */
+static void draw_icon8(int x, int y, const uint8_t ic[8])
+{
+    for (int r = 0; r < 8; ++r)
+        for (int c = 0; c < 8; ++c)
+            if (ic[r] & (0x80 >> c)) fb_pixel(x + c, y + r, true);
+}
+
+/* Two fan frames; alternating them reads as a spinning blade. */
+static const uint8_t ICON_FAN_X[8] = {
+    0b10000001, 0b01000010, 0b00100100, 0b00011000,
+    0b00011000, 0b00100100, 0b01000010, 0b10000001,
+};
+static const uint8_t ICON_FAN_PLUS[8] = {
+    0b00011000, 0b00011000, 0b00011000, 0b11100111,
+    0b11100111, 0b00011000, 0b00011000, 0b00011000,
+};
+
+/* Fan icon: animated when running, single static frame when idle. */
+static void draw_fan(int x, int y, bool running)
+{
+    const uint8_t *f = (running && ((s.tick >> 2) & 1)) ? ICON_FAN_PLUS : ICON_FAN_X;
+    draw_icon8(x, y, f);
+}
+
+/* Connectivity glyph: filled dot when commissioned, hollow ring otherwise. */
+static void draw_conn(int x, int y, bool commissioned)
+{
+    /* 5x5 */
+    fb_hline(x + 1, x + 3, y, true);
+    fb_hline(x + 1, x + 3, y + 4, true);
+    fb_pixel(x, y + 1, true); fb_pixel(x, y + 2, true); fb_pixel(x, y + 3, true);
+    fb_pixel(x + 4, y + 1, true); fb_pixel(x + 4, y + 2, true); fb_pixel(x + 4, y + 3, true);
+    if (commissioned) fb_fill_rect(x + 1, y + 1, 3, 3, true);
+}
+
+static const char *fan_abbrev(int fan_speed)
+{
+    switch (fan_speed) {
+        case 1:  return "LO";
+        case 2:  return "MD";
+        case 3:  return "HI";
+        default: return "AU";
+    }
 }
 
 /* ---- unit / formatting helpers ------------------------------------------- */
@@ -161,42 +238,80 @@ static int draw_temp_unit(int x, int y, int c100, bool fahrenheit, int scale)
 
 /* ---- screen composition (geometry per docs/UI.md) ------------------------ */
 
+/* Top status bar: mode (with heat/cool arrow), fan icon + speed, link dot. */
+static void draw_status_bar(const ui_model_t *m)
+{
+    int x = 2;
+    if (m->mode == 1) { draw_tri_up(x + 3, 2, 5); x += 9; }        /* HEAT */
+    else if (m->mode == 2) { draw_tri_down(x + 3, 2, 5); x += 9; } /* COOL */
+    draw_text(x, 2, mode_str(m->mode), 1);
+
+    int rx = s.cfg.width;
+    rx -= 5; draw_conn(rx, 2, m->commissioned);                    /* link dot */
+    rx -= 2 + 8; draw_fan(rx, 1, m->fan_on);                       /* fan icon */
+    rx -= 1 + text_width(fan_abbrev(m->fan_speed), 1);
+    draw_text(rx, 2, fan_abbrev(m->fan_speed), 1);                 /* AU/LO/MD/HI */
+
+    fb_hline(0, s.cfg.width - 1, 11, true);
+}
+
+/* Setpoint pill: single target for Heat/Cool/Off/Fan, both for Auto. */
+static void draw_setpoint_pill(const ui_model_t *m)
+{
+    int y = 40, h = 14;
+    draw_round_rect(4, y, s.cfg.width - 8, h);
+    int ty = y + 4;
+    if (m->mode == 3) {                                            /* AUTO: both */
+        int x = 9;
+        draw_tri_up(x + 2, ty + 1, 4); x += 8;
+        x = draw_temp_unit(x, ty, m->heat_set_c100, m->fahrenheit, 1);
+        x += 5;
+        draw_tri_down(x + 2, ty + 1, 4); x += 8;
+        draw_temp_unit(x, ty, m->cool_set_c100, m->fahrenheit, 1);
+    } else {
+        int set = (m->active_setpoint == 1) ? m->cool_set_c100 : m->heat_set_c100;
+        int x = draw_text(10, ty, "SET ", 1);
+        draw_temp_unit(x, ty, set, m->fahrenheit, 1);
+    }
+    /* Calling indicator: a filled dot at the pill's right edge. */
+    if (m->calling_heat || m->calling_cool)
+        fb_fill_rect(s.cfg.width - 12, y + 5, 4, 4, true);
+}
+
 static void render_home(const ui_model_t *m)
 {
-    draw_text(0, 0, mode_str(m->mode), 1);                 /* top-left: mode */
-    draw_text(s.cfg.width - text_width(m->commissioned ? "NET" : "---", 1), 0,
-              m->commissioned ? "NET" : "---", 1);
+    draw_status_bar(m);
 
-    /* Center the big temperature + unit together. */
+    /* Big current temperature + unit, centered under the status bar. */
     char buf[12];
     fmt_temp(buf, sizeof(buf), m->temp_c100, m->fahrenheit);
     int w = text_width(buf, 3) + 6 /*deg*/ + 6 * 3 /*unit*/;
-    draw_temp_unit((s.cfg.width - w) / 2, 14, m->temp_c100, m->fahrenheit, 3);
+    draw_temp_unit((s.cfg.width - w) / 2, 15, m->temp_c100, m->fahrenheit, 3);
 
-    int set = (m->active_setpoint == 1) ? m->cool_set_c100 : m->heat_set_c100;
-    const char *lbl = (m->mode == 3) ? (m->active_setpoint == 1 ? "COOL " : "HEAT ") : "SET ";
-    int x = draw_text(2, 44, lbl, 1);
-    x = draw_temp_unit(x, 44, set, m->fahrenheit, 1);
-    if (m->calling_heat)      draw_text(x + 4, 44, ">HEAT", 1);
-    else if (m->calling_cool) draw_text(x + 4, 44, ">COOL", 1);
+    draw_setpoint_pill(m);
 
-    fb_hline(0, s.cfg.width - 1, 54, true);
     const char *rs = m->calling_heat ? "HEATING" :
-                     (m->calling_cool ? "COOLING" : (m->fan_on ? "FAN" : "IDLE"));
+                     (m->calling_cool ? "COOLING" : (m->fan_on ? "FAN ON" : "IDLE"));
     draw_text(2, 56, rs, 1);
 }
 
 static void render_adjust(const ui_model_t *m)
 {
-    draw_text(2, 0, m->active_setpoint == 1 ? "SET COOLING" : "SET HEATING", 1);
+    draw_status_bar(m);
+    draw_text(2, 15, m->active_setpoint == 1 ? "SET COOL" : "SET HEAT", 1);
+
     int set = (m->active_setpoint == 1) ? m->cool_set_c100 : m->heat_set_c100;
     char buf[12];
     fmt_temp(buf, sizeof(buf), set, m->fahrenheit);
     int w = text_width(buf, 3) + 6 + 6 * 3;
-    draw_temp_unit((s.cfg.width - w) / 2, 18, set, m->fahrenheit, 3);
-    /* limit bar */
-    fb_rect(10, 54, s.cfg.width - 20, 8, true);
-    fb_fill_rect(12, 56, (s.cfg.width - 24) / 2, 4, true);
+    draw_temp_unit((s.cfg.width - w) / 2, 26, set, m->fahrenheit, 3);
+
+    /* Position bar within the allowed setpoint range. */
+    int lo = (m->active_setpoint == 1) ? 1600 : 700;
+    int hi = (m->active_setpoint == 1) ? 3200 : 3000;
+    int frac = set <= lo ? 0 : set >= hi ? (s.cfg.width - 24) : (set - lo) * (s.cfg.width - 24) / (hi - lo);
+    draw_round_rect(10, 54, s.cfg.width - 20, 9);
+    fb_fill_rect(12, 56, frac, 5, true);
 }
 
 static void render_menu(const ui_model_t *m)
@@ -266,6 +381,11 @@ int ui_oled_init(const ui_oled_config_t *cfg)
     if (s.cfg.height == 0) s.cfg.height = 64;
     if (s.cfg.i2c_hz == 0) s.cfg.i2c_hz = 400000;
 
+#ifdef UI_OLED_HOST
+    s.ready = true;
+    fb_clear();
+    return ESP_OK;
+#else
     i2c_master_bus_config_t bus_cfg = {
         .i2c_port = s.cfg.i2c_port,
         .sda_io_num = s.cfg.sda_gpio,
@@ -306,11 +426,13 @@ int ui_oled_init(const ui_oled_config_t *cfg)
     fb_flush();
     ESP_LOGI(TAG, "OLED %dx%d @0x%02x ready", s.cfg.width, s.cfg.height, s.cfg.addr);
     return ESP_OK;
+#endif /* UI_OLED_HOST */
 }
 
 void ui_oled_render(const ui_model_t *m)
 {
     if (!m || !s.ready) return;
+    s.tick++;
     fb_clear();
     /* Fault always wins (safety). Pairing replaces HOME while uncommissioned,
      * but the settings menu/info stay reachable so units/sensor type can be set
@@ -333,7 +455,11 @@ void ui_oled_render(const ui_model_t *m)
 void ui_oled_set_brightness(uint8_t level)
 {
     if (!s.ready) return;
+#ifndef UI_OLED_HOST
     /* SSD1306 contrast via the panel-io command path (0x81, level). */
     uint8_t cmd = 0x81;
     esp_lcd_panel_io_tx_param(s.io, cmd, &level, 1);
+#else
+    (void)level;
+#endif
 }

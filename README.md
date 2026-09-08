@@ -11,12 +11,15 @@ with Apple Home, Google Home, Amazon Alexa, Samsung SmartThings and Home Assista
 cloud, no vendor lock-in, all local control over a Thread mesh.
 
 > **Status:** Specification + firmware. This repository is the *engineering spec* for the
-> device plus a structured ESP-IDF / ESP-Matter project. The self-contained logic
-> (thermistor conversion, control/hysteresis, encoder & button input), the OLED UI
-> (5×7 font, home/adjust/menu/info/pairing/fault screens) and the local **settings menu**
-> (select NTC Type 2/3, toggle °C/°F, view the Matter pairing code) are implemented; the
-> Matter endpoint wiring is laid out with clearly marked integration points against the
-> installed SDK version. See [`docs/SPECIFICATION.md`](docs/SPECIFICATION.md).
+> device plus a structured ESP-IDF / ESP-Matter project. Implemented: the self-contained
+> logic (thermistor conversion, control/hysteresis with fan-speed levels, encoder & button
+> input), a modern OLED UI (5×7 font, status bar with mode/fan/link icons, rounded setpoint
+> pill; home/adjust/menu/info/pairing/fault screens — previewable on a host PC), the local
+> **settings menu** (fan Auto/Low/Med/High, NTC Type 2/3, °C/°F, Matter pairing code), and
+> full **remote override from Matter** of mode, setpoints and fan speed. Commissioning
+> mirrors the esp-matter `light` example. The Matter endpoint wiring is laid out with
+> clearly marked integration points against the installed SDK version. See
+> [`docs/SPECIFICATION.md`](docs/SPECIFICATION.md).
 
 ---
 
@@ -30,7 +33,9 @@ cloud, no vendor lock-in, all local control over a Thread mesh.
 | **Temperature sensor** | 10 kΩ NTC, HVAC **Type 2** or **Type 3** curve (selectable), voltage-divider + ADC |
 | **Display** | 0.96″ (nom. "0.95″") **SSD1306** 128×64 monochrome OLED, I²C |
 | **Local input** | Incremental **rotary encoder** (quadrature + integrated switch) and a dedicated **push button** |
-| **HVAC output** | 4 relay/SSR channels: W (heat), Y (cool/compressor), G (fan), O·B (reversing valve) |
+| **HVAC output** | Relay/SSR: W (heat), Y (cool/compressor), G (fan), O·B (reversing valve) + optional 3-tap multi-speed blower |
+| **Fan control** | Auto / Low / Med / High — local (menu) and remote (Matter Fan Control cluster) |
+| **Modes** | Off / Heat / Cool / Auto / Fan-only (Honeywell-Home-style UX) |
 | **Power** | USB-C 5 V (bench) or 24 VAC → 5 V (field install) |
 | **Framework** | ESP-IDF v5.x + ESP-Matter |
 

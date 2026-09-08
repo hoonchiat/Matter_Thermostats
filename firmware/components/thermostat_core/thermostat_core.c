@@ -78,6 +78,7 @@ thermo_config_t thermo_core_default_config(void)
         .min_on_s            = 120,
         .startup_lockout_s   = 30,
         .hp_mode             = THERMO_HP_NONE,
+        .fan_call_speed      = THERMO_FAN_HIGH,
     };
     return c;
 }
@@ -92,6 +93,11 @@ thermo_output_t thermo_core_step(const thermo_config_t *cfg,
         thermo_core_init(st, in->now_ms);
     }
 
+    /* A fixed (non-auto) fan speed means continuous circulation at that level. */
+    const int fixed_fan = (in->fan_speed >= THERMO_FAN_LOW) ? in->fan_speed : 0;
+    int call_speed = cfg->fan_call_speed;
+    if (call_speed < THERMO_FAN_LOW || call_speed > THERMO_FAN_HIGH) call_speed = THERMO_FAN_HIGH;
+
     /* Fault: force all outputs off, remember the off transition, bail. */
     if (in->fault) {
         if (st->heating) { st->heating = false; st->heat_off_ms = in->now_ms; st->heat_off_valid = true; }
@@ -99,11 +105,18 @@ thermo_output_t thermo_core_step(const thermo_config_t *cfg,
         return out;                    /* fan off too under fault */
     }
 
-    /* Off / Fan-only: no heat/cool; fan follows request or fan-only mode. */
+    /* Off / Fan-only: no heat/cool. Fan-only runs continuously (at the chosen
+     * speed, or the call speed if AUTO); Off still honors a fixed circulation
+     * speed but idles when the fan is AUTO. */
     if (in->mode == THERMO_MODE_OFF || in->mode == THERMO_MODE_FAN_ONLY) {
         if (st->heating) { st->heating = false; st->heat_off_ms = in->now_ms; st->heat_off_valid = true; }
         if (st->cooling) { st->cooling = false; st->cool_off_ms = in->now_ms; st->cool_off_valid = true; }
-        out.g_fan = (in->mode == THERMO_MODE_FAN_ONLY) || in->fan_request;
+        if (in->mode == THERMO_MODE_FAN_ONLY) {
+            out.fan_level = fixed_fan > 0 ? fixed_fan : call_speed;
+        } else {
+            out.fan_level = fixed_fan;      /* OFF: only a fixed speed circulates */
+        }
+        out.g_fan = out.fan_level > 0;
         return out;
     }
 
@@ -163,7 +176,13 @@ thermo_output_t thermo_core_step(const thermo_config_t *cfg,
     /* --- Map internal state to outputs ------------------------------------- */
     out.w_heat = st->heating;
     out.y_cool = st->cooling;
-    out.g_fan  = st->heating || st->cooling || in->fan_request;
+
+    /* Fan: run at the call speed while heating/cooling; a fixed circulation
+     * speed applies whenever it is higher (or when idle). */
+    int fan_level = (st->heating || st->cooling) ? call_speed : 0;
+    if (fixed_fan > fan_level) fan_level = fixed_fan;
+    out.fan_level = fan_level;
+    out.g_fan  = fan_level > 0;
 
     switch (cfg->hp_mode) {
         case THERMO_HP_O_IN_COOL: out.ob_reversing = st->cooling; break;

@@ -30,6 +30,7 @@ typedef struct {
     int  min_on_s;
     int  hp_reversing;      /* thermo_hp_mode_t                  */
     int  brightness;        /* 0..255                            */
+    int  fan_speed;         /* thermo_fan_speed_t: 0=auto,1=low,2=med,3=high */
 } app_config_t;
 
 /* ---- live application state (single source of truth) ---------------------- */
@@ -63,6 +64,7 @@ typedef enum {
     EVT_MATTER_SET_HEAT,    /* value = 0.01 C                    */
     EVT_MATTER_SET_COOL,    /* value = 0.01 C                    */
     EVT_MATTER_SET_UNITS,   /* value = 0/1 (C/F)                 */
+    EVT_MATTER_SET_FAN,     /* value = thermo_fan_speed_t (0..3) */
     EVT_MATTER_COMMISSIONED,/* value = 0/1                       */
 } app_event_type_t;
 
@@ -93,6 +95,7 @@ void app_matter_report_running_state(bool heat, bool cool, bool fan);
 void app_matter_report_setpoints(int heat_c100, int cool_c100);
 void app_matter_report_mode(int mode);
 void app_matter_report_units(bool fahrenheit);   /* TemperatureDisplayMode */
+void app_matter_report_fan(int fan_speed);       /* Fan Control FanMode */
 void app_matter_factory_reset(void);
 void app_matter_get_pairing_code(char *out, int out_len);
 

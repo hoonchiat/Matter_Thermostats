@@ -33,6 +33,15 @@ typedef enum {
     THERMO_HP_B_IN_HEAT,    /* energize O/B during a heat call              */
 } thermo_hp_mode_t;
 
+/* Fan speed level. 0 = AUTO (fan follows the heat/cool call); 1..3 = a
+ * continuous circulation speed even when no call is active. */
+typedef enum {
+    THERMO_FAN_AUTO = 0,
+    THERMO_FAN_LOW  = 1,
+    THERMO_FAN_MED  = 2,
+    THERMO_FAN_HIGH = 3,
+} thermo_fan_speed_t;
+
 /* Static configuration (from NVS / Kconfig). Units as noted. */
 typedef struct {
     float    deadband_c;         /* total hysteresis band, e.g. 1.0          */
@@ -41,6 +50,7 @@ typedef struct {
     uint32_t min_on_s;           /* minimum ON time once energized           */
     uint32_t startup_lockout_s;  /* lockout after boot before any comp. call */
     thermo_hp_mode_t hp_mode;    /* reversing valve mapping                  */
+    int      fan_call_speed;     /* fan level (1..3) used during a heat/cool call */
 } thermo_config_t;
 
 /* Live inputs for one control step. */
@@ -50,7 +60,7 @@ typedef struct {
     float         heat_set_c;    /* heating setpoint                         */
     float         cool_set_c;    /* cooling setpoint                         */
     bool          fault;         /* sensor fault → force everything off      */
-    bool          fan_request;   /* external (Matter) continuous-fan request */
+    int           fan_speed;     /* thermo_fan_speed_t: 0=auto,1=low,2=med,3=high */
     uint64_t      now_ms;        /* monotonic time                          */
 } thermo_input_t;
 
@@ -72,8 +82,9 @@ typedef struct {
 typedef struct {
     bool w_heat;
     bool y_cool;
-    bool g_fan;
+    bool g_fan;                  /* true when fan_level > 0 (fan enable)      */
     bool ob_reversing;
+    int  fan_level;              /* 0 = off, 1 = low, 2 = med, 3 = high       */
     bool call_delayed;           /* a call is wanted but gated by a timer     */
 } thermo_output_t;
 

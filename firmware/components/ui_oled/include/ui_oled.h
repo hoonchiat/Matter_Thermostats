@@ -38,6 +38,7 @@ typedef struct {
     bool  calling_heat;
     bool  calling_cool;
     bool  fan_on;
+    int   fan_speed;        /* thermo_fan_speed_t: 0=auto,1=low,2=med,3=high */
     bool  fault;
     bool  commissioned;     /* Matter commissioned?                              */
     int   thread_rssi;      /* dBm, for the signal glyph (0 if unknown)          */

@@ -12,18 +12,24 @@ extern "C" {
 #endif
 
 typedef struct {
-    int  gpio_w;        /* heat        */
+    int  gpio_w;        /* heat            */
     int  gpio_y;        /* cool/compressor */
-    int  gpio_g;        /* fan         */
+    int  gpio_g;        /* fan enable (any speed); set < 0 to disable */
     int  gpio_ob;       /* reversing valve (heat pump); set < 0 to disable */
+    /* Optional multi-speed blower taps (one-hot). Set any < 0 to disable that
+     * tap; if all three are < 0 the driver just uses the single gpio_g enable. */
+    int  gpio_g_low;
+    int  gpio_g_med;
+    int  gpio_g_high;
     bool active_high;   /* true if a logic-1 energizes the load */
 } relays_config_t;
 
 typedef struct {
     bool w;
     bool y;
-    bool g;
+    bool g;             /* fan enable (fan_level > 0) */
     bool ob;
+    int  fan_level;     /* 0 = off, 1 = low, 2 = med, 3 = high (for speed taps) */
 } relays_state_t;
 
 /* Configure the output GPIOs and drive everything OFF. */

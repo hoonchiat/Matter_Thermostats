@@ -33,6 +33,7 @@ void app_config_defaults(app_config_t *cfg)
     cfg->min_on_s      = CONFIG_THERMO_MIN_ON_S;
     cfg->hp_reversing  = THERMO_HP_NONE;
     cfg->brightness    = 200;
+    cfg->fan_speed     = THERMO_FAN_AUTO;
 }
 
 static void get_i32(nvs_handle_t h, const char *k, int *v)
@@ -66,6 +67,7 @@ int app_nvs_load(app_config_t *cfg)
     get_i32(h, "min_on",   &cfg->min_on_s);
     get_i32(h, "hp",       &cfg->hp_reversing);
     get_i32(h, "bright",   &cfg->brightness);
+    get_i32(h, "fan",      &cfg->fan_speed);
     nvs_close(h);
     ESP_LOGI(TAG, "config loaded");
     return ESP_OK;
@@ -88,6 +90,7 @@ int app_nvs_save(const app_config_t *cfg)
     nvs_set_i32(h, "min_on",   cfg->min_on_s);
     nvs_set_i32(h, "hp",       cfg->hp_reversing);
     nvs_set_i32(h, "bright",   cfg->brightness);
+    nvs_set_i32(h, "fan",      cfg->fan_speed);
 
     err = nvs_commit(h);
     nvs_close(h);

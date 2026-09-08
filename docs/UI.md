@@ -44,24 +44,37 @@ to its resting layout. Changes are also pushed to Matter immediately.
 
 ## 3. HOME screen layout (128×64)
 
+Modern layout inspired by the Honeywell Home app: a top **status bar**, a large centered
+temperature, and a rounded **setpoint pill**.
+
 ```
 ┌────────────────────────────────────────────┐
-│ HEAT            �static status row      ⌂ ᯤ │   mode text · fabric · Thread signal
-│                                            │
-│      21.4°C        ← big current temp      │   large font, room temperature
-│                                            │
-│   Set 20.0°   ▲heat                        │   active setpoint + call indicator
+│ ▲ HEAT                        HI  ✺  ●      │   status bar: mode + arrow | fan speed + fan icon | link dot
 │────────────────────────────────────────────│
-│ ● heating          14:37   (optional)      │   running state · optional clock
+│                                            │
+│            2 1 . 4 °C                       │   big current temperature (×3 font)
+│                                            │
+│   ╭──────────────────────────────────╮     │
+│   │ SET 20.0°C                    ●  │     │   rounded setpoint pill (● = calling)
+│   ╰──────────────────────────────────╯     │
+│ HEATING                                    │   running state
 └────────────────────────────────────────────┘
 ```
 
-Elements:
-- **Mode** (top-left): OFF / HEAT / COOL / AUTO / FAN.
-- **Network** (top-right): commissioned/fabric icon + Thread link/signal glyph.
-- **Current temperature** (center, large): from `LocalTemperature`, in the selected units.
-- **Setpoint** row: the active target; in Auto shows both, highlighting the selected one.
-- **Running state** (bottom): idle / heating / cooling / fan, matching the status LED.
+Status-bar elements (left → right):
+- **Mode** with a filled ▲ (heat) / ▼ (cool) indicator; `AUTO` / `OFF` / `FAN` as text.
+- **Fan speed** abbreviation `AU / LO / MD / HI` and an **animated fan icon** (spins while
+  the fan is running).
+- **Link dot**: filled when commissioned onto a Matter fabric, hollow ring when not.
+
+Center / pill:
+- **Current temperature** (large) from `LocalTemperature`, in the selected units with a
+  degree mark.
+- **Setpoint pill**: the active target (`SET …`); in **Auto** the pill shows both, each with
+  its ▲/▼ marker. A filled dot appears in the pill while heating or cooling is called.
+- **Running state** (bottom): `IDLE` / `HEATING` / `COOLING` / `FAN ON`, matching the LED.
+
+These screens can be previewed as ASCII on a host PC — see [§9](#9-previewing-the-ui-no-hardware).
 
 ## 4. ADJUST screen
 
@@ -88,10 +101,15 @@ the push button** to go back / close.
 
 | Row | Action | Persisted key |
 |---|---|---|
+| `FAN: AUTO/LOW/MED/HIGH` | encoder-press cycles the fan speed; mirrored to the Matter Fan Control `FanMode` attribute | `fan` |
 | `UNITS: C/F` | encoder-press toggles °C ⇄ °F (also mirrors to the Matter `TemperatureDisplayMode` attribute) | `units` |
 | `SENSOR: TYPE 2/3` | encoder-press toggles the NTC curve; re-applied to the sensor driver live | `ntcType` |
 | `MATTER CODE >` | encoder-press opens the **INFO screen** showing the manual pairing code (the Matter setup payload number) | — |
 | `BACK` | return to Home | — |
+
+Fan speed can also be changed remotely from any Matter controller (see
+[MATTER.md](MATTER.md)); local and remote stay in sync. `AUTO` runs the fan only during a
+heat/cool call; `LOW/MED/HIGH` run it continuously at that speed (circulate).
 
 The selected row is drawn as an inverted (highlighted) bar. Changes are persisted to NVS
 immediately and, where relevant, pushed to Matter controllers.
@@ -156,6 +174,21 @@ All HVAC outputs are forced off while a fault is active (FR-12); the status LED 
   the big temperature). Lowercase is up-cased automatically, so the UI uses uppercase labels.
 - Redraw runs at a ~10 Hz cap from `ui_task`; the whole 1 bpp framebuffer is flushed per
   frame (small enough over 400 kHz I²C).
+- Icons (heat/cool triangles, the animated fan, the link dot, rounded pills) are drawn
+  procedurally on the framebuffer — no image assets.
 - The `ui_oled` component exposes a controller-agnostic surface (SSD1306 default, SH1106
   selectable) so the layout code is display-independent. It can optionally be backed by
   LVGL if a richer UI is desired later.
+
+## 9. Previewing the UI (no hardware)
+
+The rendering path (framebuffer + font + screen composition) compiles on a host PC when
+`UI_OLED_HOST` is defined, so the exact pixels can be inspected without a display:
+
+```bash
+cd firmware/test/host
+make preview      # renders HOME / ADJUST / MENU / INFO / PAIRING / FAULT as ASCII
+```
+
+This is how the layouts above are verified; only the I²C / esp_lcd bring-up and flush are
+compiled out in that mode.

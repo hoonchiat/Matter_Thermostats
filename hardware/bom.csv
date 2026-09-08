@@ -10,6 +10,7 @@ C1,1,ADC filter cap,100nF X7R,0603,RC low-pass at ADC node
 R3,2,I2C pull-up,4.7k 5%,0603,SDA/SCL to 3V3
 R4,2,Encoder RC,10nF + 1k (per line),0603,A/B debounce (with internal pull-ups)
 K1,4,Relay or opto-triac,24VAC 2A / MOC302x+triac,varies,W/Y/G/O.B outputs (SSR recommended)
+K2,3,Relay or opto-triac (optional),24VAC 2A,varies,multi-speed blower taps G_LOW/MED/HIGH (omit for single-speed fan)
 Q1,4,Relay driver,NPN/MOSFET or ULN2003 array,SOT-23/SOIC,GPIO to relay coil
 D1,4,Flyback diode / snubber,1N4148 or RC snubber,varies,per inductive output
 LED1,1,Addressable RGB LED,WS2812B,5050,status indicator (GPIO8/RMT)

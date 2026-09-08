@@ -30,6 +30,17 @@ Provided by the stack. Key clusters:
 | Thermostat User Interface Configuration | 0x0204 | display units, keypad lock |
 | Groups | 0x0004 | *(optional)* |
 
+### Endpoint 2 — Fan (`0x002B`)
+
+Exposes the blower as a standard, independently-controllable Matter fan, so its speed can
+be viewed and **overridden** from any ecosystem.
+
+| Cluster | ID | Role |
+|---|---|---|
+| Identify | 0x0003 | locate |
+| **Fan Control** | 0x0202 | fan speed (Auto / Low / Med / High) |
+| Groups | 0x0004 | *(optional)* |
+
 ---
 
 ## 2. Thermostat cluster (0x0201)
@@ -106,6 +117,34 @@ Local encoder adjustments produce the **same** setpoint writes internally, then 
 
 ---
 
+## 3a. Fan Control cluster (0x0202, endpoint 2)
+
+Exposes the fan speed for remote view/override.
+
+| Attribute | ID | Type | Access | Notes |
+|---|---|---|---|---|
+| FanMode | 0x0000 | enum8 | RW | Off=0, Low=1, Medium=2, High=3, On=4, Auto=5 |
+| FanModeSequence | 0x0001 | enum8 | R | **2** = Off/Low/Med/High/Auto |
+| PercentSetting | 0x0002 | uint8 (0–100) | RW | mapped onto the discrete levels |
+| PercentCurrent | 0x0003 | uint8 | R | reflects the running level |
+
+**Mapping to the device fan speed** (`AUTO / LOW / MED / HIGH`):
+
+| FanMode | Device speed |
+|---|---|
+| Auto (5), Off (0) | AUTO — fan follows the heat/cool call |
+| Low (1) | LOW — continuous |
+| Medium (2) | MED — continuous |
+| High (3), On (4) | HIGH — continuous |
+
+`PercentSetting` writes map by band: 0 → Auto, 1–33 → Low, 34–66 → Med, 67–100 → High.
+A local fan-speed change (settings menu) calls `attribute::update(FanMode)` so controllers
+stay in sync; a remote write updates the device and the OLED. Single-speed installs (one
+`G` wire) treat any non-Auto speed as "fan on"; multi-tap blowers energize the matching
+`G_LOW/G_MED/G_HIGH` relay.
+
+---
+
 ## 4. Basic Information (set these before shipping)
 
 | Field | Value (example) |
@@ -125,6 +164,13 @@ Local encoder adjustments produce the **same** setpoint writes internally, then 
 ---
 
 ## 5. Commissioning flow (BLE → Thread)
+
+The pairing bring-up mirrors the **esp-matter `light` example** so behavior is identical to
+that well-trodden path: `esp_matter::start(app_event_cb)`, `PrintOnboardingCodes(BLE)` on
+boot (QR + manual code to console), and on the **last fabric being removed** the device
+re-opens a basic commissioning window (DNS-SD) so it can be re-added. The device-event
+callback handles the same events (`kCommissioningComplete`, `kFabricRemoved`,
+`kBLEDeinitialized`, `kInterfaceIpAddressChanged`, commissioning-window open/close).
 
 **Prerequisite:** a **Thread Border Router** on the LAN — e.g. Apple TV 4K / HomePod mini,
 Google Nest Hub (2nd gen) / Nest Wifi, Amazon eero, or an OpenThread Border Router (e.g.
@@ -153,16 +199,24 @@ device joins multiple fabrics simultaneously.
 
 ## 6. Local ↔ Matter synchronization rules
 
+Everything the user can change locally can also be **overridden from Matter**, and vice
+versa — the two are kept in sync bidirectionally.
+
 | Trigger | Action |
 |---|---|
-| Remote write `SystemMode` | update `app_state.mode`, re-run control, redraw OLED |
-| Remote write `OccupiedHeatingSetpoint` / `OccupiedCoolingSetpoint` | clamp to limits, update state, control, OLED |
+| Remote write `SystemMode` (override mode) | update `app_state.mode`, re-run control, redraw OLED |
+| Remote write `OccupiedHeatingSetpoint` / `OccupiedCoolingSetpoint` (override setpoint) | clamp to limits, update state, control, OLED |
+| Remote write `FanControl::FanMode` / `PercentSetting` (override speed) | update fan speed, re-run control, OLED |
 | Remote write `TemperatureDisplayMode` | switch OLED units, persist |
 | Local encoder setpoint change | update state → `attribute::update()` → controllers notified |
 | Local mode change (button) | update state → `attribute::update(SystemMode)` |
+| Local fan-speed change (menu) | update state → `attribute::update(FanMode)` |
+| Local units change (menu) | update state → `attribute::update(TemperatureDisplayMode)` |
 | Measured temp change ≥ 0.1 °C or every N s | `attribute::update(LocalTemperature)` |
 | Output state change | `attribute::update(ThermostatRunningState)` |
 | Sensor fault | `LocalTemperature = null`, outputs off, running state cleared |
+
+All remote writes are persisted to NVS so an override survives a reboot.
 
 ---
 
