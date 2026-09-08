@@ -22,6 +22,7 @@ firmware/test/host/test_thermistor
 firmware/test/host/test_thermostat_core
 firmware/test/host/test_occupancy
 firmware/test/host/test_sht4x
+firmware/test/host/test_ui
 firmware/test/host/preview_ui
 
 # Logs / local
