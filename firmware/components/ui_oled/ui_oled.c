@@ -315,7 +315,10 @@ static void render_home(const ui_model_t *m)
 static void render_adjust(const ui_model_t *m)
 {
     draw_status_bar(m);
-    draw_text(2, 15, m->active_setpoint == 1 ? "SET COOL" : "SET HEAT", 1);
+    const char *lbl = m->active_setpoint == 1
+        ? (m->occupied ? "SET COOL" : "AWAY COOL")
+        : (m->occupied ? "SET HEAT" : "AWAY HEAT");
+    draw_text(2, 15, lbl, 1);
 
     int set = (m->active_setpoint == 1) ? m->cool_set_c100 : m->heat_set_c100;
     char buf[12];

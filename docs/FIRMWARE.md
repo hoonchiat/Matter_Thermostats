@@ -110,9 +110,11 @@ Reversing valve (O·B): heat-pump config maps a cool call → O (or heat call �
 
 Occupancy (Home/Away): before the control step, `control_task` resolves occupancy —
 `occupancy_poll()` (PIR + vacancy timeout) when the source is Sensor and one is wired,
-else the manual toggle. When Away it feeds **effective** setpoints (`heat − away_heat`,
-`cool + away_cool`, clamped) into the core; the stored/Matter setpoints are untouched. The
-resolved state is published via the Occupancy Sensing endpoint.
+else the manual toggle. It then feeds the **occupied** setpoints when Home and the
+**unoccupied** setpoints when Away (Matter OCC feature) into the core — two independent
+sets, both writable from Matter and editable locally (ADJUST edits whichever is in
+effect). The resolved state is published via the thermostat `Occupancy` attribute and the
+Occupancy Sensing endpoint.
 
 ### 3.2 Compressor / cycle protection (safety, NFR-4)
 

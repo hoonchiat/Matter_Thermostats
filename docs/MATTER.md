@@ -61,7 +61,7 @@ toggle — so controllers and automations can react to presence.
 |---|---|---|---|
 | Heating (`HEAT`) | 0 | ✅ | heating setpoint & W output |
 | Cooling (`COOL`) | 1 | ✅ | cooling setpoint & Y output |
-| Occupancy (`OCC`) | 2 | ❌ v1 | occupied/unoccupied sets |
+| Occupancy (`OCC`) | 2 | ✅ | occupied/unoccupied setpoints + `Occupancy` attr |
 | Schedule (`SCH`) | 3 | ❌ v1 | on-device schedule |
 | Setback (`SB`) | 4 | ❌ v1 | setback |
 | AutoMode (`AUTO`) | 5 | ✅ | System Mode = Auto w/ dead-zone |
@@ -73,12 +73,15 @@ All temperatures are **signed int16 in 0.01 °C** (e.g. 2150 = 21.50 °C).
 | Attribute | ID | Type | Access | Notes |
 |---|---|---|---|---|
 | LocalTemperature | 0x0000 | int16 | R | measured room temp; `null` on fault |
+| Occupancy | 0x0002 | map8 | R | OCC feature; bit0 = occupied (Home) |
 | AbsMinHeatSetpointLimit | 0x0003 | int16 | R | e.g. 700 (7 °C) |
 | AbsMaxHeatSetpointLimit | 0x0004 | int16 | R | e.g. 3000 (30 °C) |
 | AbsMinCoolSetpointLimit | 0x0005 | int16 | R | e.g. 1600 (16 °C) |
 | AbsMaxCoolSetpointLimit | 0x0006 | int16 | R | e.g. 3200 (32 °C) |
 | OccupiedCoolingSetpoint | 0x0011 | int16 | RW | default 2600 (26 °C) |
 | OccupiedHeatingSetpoint | 0x0012 | int16 | RW | default 2000 (20 °C) |
+| UnoccupiedCoolingSetpoint | 0x0013 | int16 | RW | OCC; Away cool, default 2900 (29 °C) |
+| UnoccupiedHeatingSetpoint | 0x0014 | int16 | RW | OCC; Away heat, default 1700 (17 °C) |
 | MinHeatSetpointLimit | 0x0015 | int16 | RW | user-limited range |
 | MaxHeatSetpointLimit | 0x0016 | int16 | RW | |
 | MinCoolSetpointLimit | 0x0017 | int16 | RW | |
@@ -165,15 +168,18 @@ stay in sync; a remote write updates the device and the OLED. Single-speed insta
 
 The reported occupancy is the **resolved** Home/Away state: the PIR sensor (with the
 vacancy timeout) when the source is `Sensor` and a sensor is wired, otherwise the manual
-Home/Away toggle. When Away, the control loop applies the configured heating/cooling
-**setback** to the effective setpoints (the base setpoints and the Matter setpoint
-attributes are unchanged). This is read-only to controllers — presence is a sensor input,
-not a remote command; the local menu toggles it.
+Home/Away toggle. This is read-only to controllers — presence is a sensor input, not a
+remote command; the local menu toggles it. The same resolved state is mirrored to the
+Thermostat cluster's `Occupancy` attribute (0x0002) below.
 
-> Future: the Matter Thermostat OCC feature adds `UnoccupiedHeatingSetpoint` (0x0013) /
-> `UnoccupiedCoolingSetpoint` (0x0014) and an `Occupancy` attribute (0x0002) on the
-> Thermostat cluster itself. This design uses a setback offset instead; migrating to the
-> OCC feature is a drop-in enhancement (hooks noted in `app_control.cpp`).
+### How occupancy drives setpoints (Matter OCC feature)
+
+The Thermostat cluster runs with the **OCC feature**: it carries an `Occupancy` attribute
+plus separate `Unoccupied{Heating,Cooling}Setpoint` attributes. The control loop uses the
+**occupied** setpoints when Home and the **unoccupied** setpoints when Away — the two sets
+are independent (no offset math), and both are writable from Matter and editable locally
+(the ADJUST screen edits whichever set is currently in effect). This matches how Honeywell
+Home separates the comfort and Away temperatures.
 
 ---
 
@@ -238,13 +244,15 @@ versa — the two are kept in sync bidirectionally.
 |---|---|
 | Remote write `SystemMode` (override mode) | update `app_state.mode`, re-run control, redraw OLED |
 | Remote write `OccupiedHeatingSetpoint` / `OccupiedCoolingSetpoint` (override setpoint) | clamp to limits, update state, control, OLED |
+| Remote write `UnoccupiedHeatingSetpoint` / `UnoccupiedCoolingSetpoint` (override Away setpoint) | clamp to limits, update state, control, OLED |
 | Remote write `FanControl::FanMode` / `PercentSetting` (override speed) | update fan speed, re-run control, OLED |
 | Remote write `TemperatureDisplayMode` | switch OLED units, persist |
 | Local encoder setpoint change | update state → `attribute::update()` → controllers notified |
 | Local mode change (button) | update state → `attribute::update(SystemMode)` |
 | Local fan-speed change (menu) | update state → `attribute::update(FanMode)` |
 | Local units change (menu) | update state → `attribute::update(TemperatureDisplayMode)` |
-| Occupancy change (PIR or manual toggle) | apply/clear Away setback → `attribute::update(Occupancy)` |
+| Occupancy change (PIR or manual toggle) | switch occupied↔unoccupied setpoints → `attribute::update(Occupancy)` (thermostat + sensor endpoints) |
+| Local Away-setpoint change (ADJUST while Away) | update state → `attribute::update(Unoccupied*Setpoint)` |
 | Measured temp change ≥ 0.1 °C or every N s | `attribute::update(LocalTemperature)` |
 | Output state change | `attribute::update(ThermostatRunningState)` |
 | Sensor fault | `LocalTemperature = null`, outputs off, running state cleared |

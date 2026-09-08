@@ -40,8 +40,8 @@ void app_config_defaults(app_config_t *cfg)
     cfg->occ_source    = OCC_SRC_MANUAL;
 #endif
     cfg->occ_manual_home = true;    /* default Home */
-    cfg->away_heat_c10 = CONFIG_THERMO_AWAY_HEAT_SETBACK_C10;
-    cfg->away_cool_c10 = CONFIG_THERMO_AWAY_COOL_SETBACK_C10;
+    cfg->unocc_heat_c100 = CONFIG_THERMO_DEFAULT_UNOCC_HEAT_SET_C10 * 10;
+    cfg->unocc_cool_c100 = CONFIG_THERMO_DEFAULT_UNOCC_COOL_SET_C10 * 10;
 }
 
 static void get_i32(nvs_handle_t h, const char *k, int *v)
@@ -78,8 +78,8 @@ int app_nvs_load(app_config_t *cfg)
     get_i32(h, "fan",      &cfg->fan_speed);
     get_i32(h, "occSrc",   &cfg->occ_source);
     get_u8b(h, "occHome",  &cfg->occ_manual_home);
-    get_i32(h, "awayH",    &cfg->away_heat_c10);
-    get_i32(h, "awayC",    &cfg->away_cool_c10);
+    get_i32(h, "uHeat",    &cfg->unocc_heat_c100);
+    get_i32(h, "uCool",    &cfg->unocc_cool_c100);
     nvs_close(h);
     ESP_LOGI(TAG, "config loaded");
     return ESP_OK;
@@ -105,8 +105,8 @@ int app_nvs_save(const app_config_t *cfg)
     nvs_set_i32(h, "fan",      cfg->fan_speed);
     nvs_set_i32(h, "occSrc",   cfg->occ_source);
     nvs_set_u8 (h, "occHome",  cfg->occ_manual_home ? 1 : 0);
-    nvs_set_i32(h, "awayH",    cfg->away_heat_c10);
-    nvs_set_i32(h, "awayC",    cfg->away_cool_c10);
+    nvs_set_i32(h, "uHeat",    cfg->unocc_heat_c100);
+    nvs_set_i32(h, "uCool",    cfg->unocc_cool_c100);
 
     err = nvs_commit(h);
     nvs_close(h);

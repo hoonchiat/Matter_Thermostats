@@ -168,16 +168,12 @@ static void control_task(void *arg)
         tcfg.fan_call_speed = CONFIG_THERMO_FAN_CALL_SPEED;
 
         /* Resolve Home/Away from the sensor (if selected & wired) or the manual
-         * toggle, then apply the Away setback to the effective setpoints. */
+         * toggle, then pick the occupied or unoccupied setpoints (Matter OCC). */
         bool occupied = (cfg.occ_source == OCC_SRC_SENSOR && occupancy_sensor_present())
                           ? occupancy_poll((uint64_t)now_ms())
                           : cfg.occ_manual_home;
-        int heat_eff = cfg.heat_set_c100;
-        int cool_eff = cfg.cool_set_c100;
-        if (!occupied) {
-            heat_eff = clampi(cfg.heat_set_c100 - cfg.away_heat_c10 * 10, HEAT_MIN, HEAT_MAX);
-            cool_eff = clampi(cfg.cool_set_c100 + cfg.away_cool_c10 * 10, COOL_MIN, COOL_MAX);
-        }
+        int heat_eff = clampi(occupied ? cfg.heat_set_c100 : cfg.unocc_heat_c100, HEAT_MIN, HEAT_MAX);
+        int cool_eff = clampi(occupied ? cfg.cool_set_c100 : cfg.unocc_cool_c100, COOL_MIN, COOL_MAX);
 
         thermo_input_t in = {
             .mode        = (thermo_mode_t)cfg.mode,
@@ -253,17 +249,23 @@ static void cycle_mode(void)
     g_state.cfg.mode = m;
 }
 
-/* Adjust the active setpoint by encoder detents (home/adjust screens only). */
-static void adjust_setpoint(int delta)
+/* Adjust the active setpoint by encoder detents (home/adjust screens only).
+ * When Away, edits the UNOCCUPIED setpoints (the ones currently in effect).
+ * Returns true if it edited an unoccupied setpoint. */
+static bool adjust_setpoint(int delta)
 {
     int step = setpoint_step_c100() * delta;
+    bool away = !g_state.occupied;
     if (g_state.active_setpoint == 1) {
-        g_state.cfg.cool_set_c100 = clampi(g_state.cfg.cool_set_c100 + step, COOL_MIN, COOL_MAX);
+        int *p = away ? &g_state.cfg.unocc_cool_c100 : &g_state.cfg.cool_set_c100;
+        *p = clampi(*p + step, COOL_MIN, COOL_MAX);
     } else {
-        g_state.cfg.heat_set_c100 = clampi(g_state.cfg.heat_set_c100 + step, HEAT_MIN, HEAT_MAX);
+        int *p = away ? &g_state.cfg.unocc_heat_c100 : &g_state.cfg.heat_set_c100;
+        *p = clampi(*p + step, HEAT_MIN, HEAT_MAX);
     }
     g_state.screen = UI_SCREEN_ADJUST;
     s_last_adjust_ms = now_ms();
+    return away;
 }
 
 /* Act on the selected settings-menu row. Sets change flags for the caller. */
@@ -309,7 +311,7 @@ static void menu_activate(bool *changed_units, bool *changed_sensor,
 
 static void handle_event(const app_event_t *e)
 {
-    bool changed_setpoints = false, changed_mode = false;
+    bool changed_setpoints = false, changed_unocc = false, changed_mode = false;
     bool changed_units = false, changed_sensor = false, changed_fan = false, save = false;
 
     app_lock();
@@ -322,8 +324,9 @@ static void handle_event(const app_event_t *e)
             } else if (scr == UI_SCREEN_INFO) {
                 /* no rotation action on the info screen */
             } else {
-                adjust_setpoint(e->value);
-                changed_setpoints = true; save = true;
+                if (adjust_setpoint(e->value)) changed_unocc = true;
+                else                            changed_setpoints = true;
+                save = true;
             }
             break;
 
@@ -374,6 +377,10 @@ static void handle_event(const app_event_t *e)
             g_state.cfg.heat_set_c100 = clampi(e->value, HEAT_MIN, HEAT_MAX); save = true; break;
         case EVT_MATTER_SET_COOL:
             g_state.cfg.cool_set_c100 = clampi(e->value, COOL_MIN, COOL_MAX); save = true; break;
+        case EVT_MATTER_SET_UNOCC_HEAT:
+            g_state.cfg.unocc_heat_c100 = clampi(e->value, HEAT_MIN, HEAT_MAX); save = true; break;
+        case EVT_MATTER_SET_UNOCC_COOL:
+            g_state.cfg.unocc_cool_c100 = clampi(e->value, COOL_MIN, COOL_MAX); save = true; break;
         case EVT_MATTER_SET_UNITS:
             g_state.cfg.fahrenheit = (e->value != 0); save = true; break;
         case EVT_MATTER_SET_FAN:
@@ -389,6 +396,7 @@ static void handle_event(const app_event_t *e)
 
     /* Local changes -> apply to drivers and notify Matter controllers. */
     if (changed_setpoints) app_matter_report_setpoints(snapshot.heat_set_c100, snapshot.cool_set_c100);
+    if (changed_unocc)     app_matter_report_unocc_setpoints(snapshot.unocc_heat_c100, snapshot.unocc_cool_c100);
     if (changed_mode)      app_matter_report_mode(snapshot.mode);
     if (changed_units)     app_matter_report_units(snapshot.fahrenheit);
     if (changed_fan)       app_matter_report_fan(snapshot.fan_speed);
@@ -403,9 +411,11 @@ static void build_model(ui_model_t *m)
     int ntc_type, fan_speed, occ_source;
     bool occ_home_pref;
     app_lock();
+    bool occ_live = g_state.occupied;
     m->temp_c100      = g_state.temp_c100;
-    m->heat_set_c100  = g_state.cfg.heat_set_c100;
-    m->cool_set_c100  = g_state.cfg.cool_set_c100;
+    /* Show/edit the setpoints currently in effect: unoccupied when Away. */
+    m->heat_set_c100  = occ_live ? g_state.cfg.heat_set_c100 : g_state.cfg.unocc_heat_c100;
+    m->cool_set_c100  = occ_live ? g_state.cfg.cool_set_c100 : g_state.cfg.unocc_cool_c100;
     m->mode           = g_state.cfg.mode;
     m->fahrenheit     = g_state.cfg.fahrenheit;
     m->calling_heat   = g_state.calling_heat;

@@ -103,6 +103,10 @@ static esp_err_t app_attribute_update_cb(callback_type_t type, uint16_t endpoint
                 app_post_event(EVT_MATTER_SET_HEAT, val->val.i16);
             } else if (attribute_id == Thermostat::Attributes::OccupiedCoolingSetpoint::Id) {
                 app_post_event(EVT_MATTER_SET_COOL, val->val.i16);
+            } else if (attribute_id == Thermostat::Attributes::UnoccupiedHeatingSetpoint::Id) {
+                app_post_event(EVT_MATTER_SET_UNOCC_HEAT, val->val.i16);
+            } else if (attribute_id == Thermostat::Attributes::UnoccupiedCoolingSetpoint::Id) {
+                app_post_event(EVT_MATTER_SET_UNOCC_COOL, val->val.i16);
             }
         } else if (cluster_id == ThermostatUserInterfaceConfiguration::Id) {
             if (attribute_id ==
@@ -203,13 +207,24 @@ int app_matter_start(void)
     if (!ep) { ESP_LOGE(TAG, "thermostat endpoint failed"); return ESP_FAIL; }
     s_ep = endpoint::get_id(ep);
 
-    /* TODO(matter): enable the HEAT|COOL|AUTO feature flags and add the
-     * Thermostat User Interface Configuration cluster + setpoint-limit attrs
-     * using the feature/cluster helpers for your esp-matter version, e.g.:
-     *   cluster::thermostat::feature::heating::add(...);
-     *   cluster::thermostat::feature::cooling::add(...);
-     *   cluster::thermostat::feature::auto_mode::add(...);
+    /* Occupancy (OCC) feature: adds the Occupancy attribute (0x0002) and the
+     * Unoccupied{Heating,Cooling}Setpoint attributes (0x0013/0x0014), which this
+     * device uses for the Away setpoints. Enable it (and HEAT|COOL|AUTO) with the
+     * feature helpers for your esp-matter version, then seed the unoccupied
+     * setpoints from NVS. */
+    app_lock();
+    int uheat = g_state.cfg.unocc_heat_c100, ucool = g_state.cfg.unocc_cool_c100;
+    app_unlock();
+    /* TODO(matter): exact calls vary by SDK version — e.g.
+     *   cluster_t *th = cluster::get(ep, Thermostat::Id);
+     *   cluster::thermostat::feature::heating::add(th, &heat_cfg);
+     *   cluster::thermostat::feature::cooling::add(th, &cool_cfg);
+     *   cluster::thermostat::feature::auto_mode::add(th, &auto_cfg);
+     *   cluster::thermostat::feature::occupancy::config_t occ; occ.occupancy = 1;
+     *   occ.unoccupied_heating_setpoint = uheat; occ.unoccupied_cooling_setpoint = ucool;
+     *   cluster::thermostat::feature::occupancy::add(th, &occ);
      * See docs/MATTER.md for the exact attribute set. */
+    (void)uheat; (void)ucool;
 
     /* Endpoint 2: a Fan device (0x002B) exposing the Fan Control cluster so the
      * fan speed (Auto/Low/Med/High) can be viewed and OVERRIDDEN from Matter. */
@@ -291,6 +306,13 @@ void app_matter_report_setpoints(int heat_c100, int cool_c100)
     update_i16(Thermostat::Id, Thermostat::Attributes::OccupiedCoolingSetpoint::Id, (int16_t)cool_c100);
 }
 
+void app_matter_report_unocc_setpoints(int heat_c100, int cool_c100)
+{
+    if (!s_ep) return;
+    update_i16(Thermostat::Id, Thermostat::Attributes::UnoccupiedHeatingSetpoint::Id, (int16_t)heat_c100);
+    update_i16(Thermostat::Id, Thermostat::Attributes::UnoccupiedCoolingSetpoint::Id, (int16_t)cool_c100);
+}
+
 void app_matter_report_mode(int mode)
 {
     if (!s_ep) return;
@@ -316,11 +338,19 @@ void app_matter_report_fan(int fan_speed)
 
 void app_matter_report_occupancy(bool occupied)
 {
-    if (!s_occ_ep) return;
-    /* Occupancy attribute is a bitmap8; bit0 = occupied. */
     esp_matter_attr_val_t val = esp_matter_bitmap8(occupied ? 1 : 0);
-    attribute::update(s_occ_ep, OccupancySensing::Id,
-                      OccupancySensing::Attributes::Occupancy::Id, &val);
+    /* Dedicated Occupancy Sensor endpoint. */
+    if (s_occ_ep) {
+        attribute::update(s_occ_ep, OccupancySensing::Id,
+                          OccupancySensing::Attributes::Occupancy::Id, &val);
+    }
+    /* Thermostat OCC-feature Occupancy attribute (drives occupied vs unoccupied
+     * setpoint selection in controllers). Present only when the OCC feature is
+     * enabled; harmless if not. */
+    if (s_ep) {
+        attribute::update(s_ep, Thermostat::Id,
+                          Thermostat::Attributes::Occupancy::Id, &val);
+    }
 }
 
 void app_matter_factory_reset(void)

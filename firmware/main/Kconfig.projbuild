@@ -151,12 +151,18 @@ menu "Matter Thermostat"
             bool "Occupancy sensor is active-high (motion drives pin high)"
             default y
 
-        config THERMO_AWAY_HEAT_SETBACK_C10
-            int "Away heating setback — lower heat setpoint by (0.1 C)"
-            default 30
-        config THERMO_AWAY_COOL_SETBACK_C10
-            int "Away cooling setback — raise cool setpoint by (0.1 C)"
-            default 30
+        config THERMO_DEFAULT_UNOCC_HEAT_SET_C10
+            int "Default UNOCCUPIED heating setpoint (0.1 C units)"
+            default 170
+            help
+                Matter OCC feature UnoccupiedHeatingSetpoint. Default 17.0 C
+                (a setback below the occupied heating setpoint).
+        config THERMO_DEFAULT_UNOCC_COOL_SET_C10
+            int "Default UNOCCUPIED cooling setpoint (0.1 C units)"
+            default 290
+            help
+                Matter OCC feature UnoccupiedCoolingSetpoint. Default 29.0 C
+                (a setback above the occupied cooling setpoint).
     endmenu
 
     menu "UI"
