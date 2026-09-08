@@ -1,0 +1,26 @@
+# Common project defaults (target-agnostic). Target-specific overrides live in
+# sdkconfig.defaults.esp32c6. These are applied on a fresh `idf.py set-target`.
+
+# --- Partition table ---------------------------------------------------------
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
+# --- Flash size --------------------------------------------------------------
+CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="8MB"
+
+# --- Matter (CHIP) -----------------------------------------------------------
+CONFIG_CHIP_PROJECT_CONFIG="main/chip_project_config.h"
+# Enable Matter OTA requestor (A/B partitions reserved in partitions.csv).
+CONFIG_ENABLE_OTA_REQUESTOR=y
+
+# --- FreeRTOS / system -------------------------------------------------------
+CONFIG_FREERTOS_HZ=1000
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=4096
+
+# --- Logging -----------------------------------------------------------------
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+
+# --- NVS ---------------------------------------------------------------------
+# (Enable NVS encryption in production; requires the nvs_keys partition.)
+# CONFIG_NVS_ENCRYPTION=y

@@ -1,0 +1,133 @@
+menu "Matter Thermostat"
+
+    menu "Pin assignment"
+        config THERMO_PIN_NTC_ADC
+            int "NTC thermistor ADC GPIO (ADC1)"
+            default 1
+            help
+                GPIO for the 10K NTC divider node. Must be an ADC1 channel
+                (GPIO0..GPIO6 on the ESP32-C6).
+
+        config THERMO_PIN_I2C_SDA
+            int "OLED I2C SDA GPIO"
+            default 6
+        config THERMO_PIN_I2C_SCL
+            int "OLED I2C SCL GPIO"
+            default 7
+
+        config THERMO_PIN_ENC_A
+            int "Rotary encoder A/CLK GPIO"
+            default 10
+        config THERMO_PIN_ENC_B
+            int "Rotary encoder B/DT GPIO"
+            default 11
+        config THERMO_PIN_ENC_SW
+            int "Rotary encoder switch GPIO"
+            default 2
+        config THERMO_PIN_BTN_PUSH
+            int "Push button GPIO"
+            default 3
+
+        config THERMO_PIN_RELAY_W
+            int "Relay W (heat) GPIO"
+            default 18
+        config THERMO_PIN_RELAY_Y
+            int "Relay Y (cool/compressor) GPIO"
+            default 19
+        config THERMO_PIN_RELAY_G
+            int "Relay G (fan) GPIO"
+            default 20
+        config THERMO_PIN_RELAY_OB
+            int "Relay O/B (reversing valve) GPIO"
+            default 21
+
+        config THERMO_PIN_STATUS_LED
+            int "Status RGB LED (WS2812) GPIO"
+            default 8
+        config THERMO_PIN_RESET_BTN
+            int "Factory-reset button GPIO (BOOT)"
+            default 9
+    endmenu
+
+    menu "Thermistor / sensing"
+        choice THERMO_NTC_TYPE
+            prompt "NTC curve"
+            default THERMO_NTC_TYPE3
+            config THERMO_NTC_TYPE2
+                bool "10K Type 2 (10K-2)"
+            config THERMO_NTC_TYPE3
+                bool "10K Type 3 (10K-3)"
+        endchoice
+
+        config THERMO_DIVIDER_RFIX_OHM
+            int "Divider fixed reference resistor (ohms)"
+            default 10000
+        config THERMO_DIVIDER_VREF_MV
+            int "Divider top-rail voltage (mV)"
+            default 3300
+            help
+                Nominal voltage at the top of the NTC divider. Trim to your
+                measured 3.3V rail for best accuracy.
+
+        config THERMO_ADC_MEDIAN_N
+            int "Raw ADC median filter window (samples)"
+            default 5
+        config THERMO_EMA_ALPHA_PCT
+            int "Temperature EMA smoothing alpha (percent)"
+            default 30
+            range 1 100
+    endmenu
+
+    menu "Control defaults"
+        config THERMO_DEFAULT_DEADBAND_C10
+            int "Deadband / hysteresis (0.1 C units)"
+            default 10
+            help
+                Total hysteresis band in tenths of a degree C (10 = 1.0 C).
+
+        config THERMO_MIN_OFF_S
+            int "Minimum compressor OFF time (s)"
+            default 300
+        config THERMO_MIN_ON_S
+            int "Minimum ON time (s)"
+            default 120
+        config THERMO_STARTUP_LOCKOUT_S
+            int "Startup compressor lockout (s)"
+            default 30
+
+        config THERMO_DEFAULT_HEAT_SET_C10
+            int "Default heating setpoint (0.1 C units)"
+            default 200
+        config THERMO_DEFAULT_COOL_SET_C10
+            int "Default cooling setpoint (0.1 C units)"
+            default 260
+
+        config THERMO_AUTO_MIN_DEADZONE_C10
+            int "Auto-mode minimum heat/cool gap (0.1 C units)"
+            default 20
+    endmenu
+
+    menu "UI"
+        choice THERMO_OLED_CONTROLLER
+            prompt "OLED controller"
+            default THERMO_OLED_SSD1306
+            config THERMO_OLED_SSD1306
+                bool "SSD1306 (0.96in / 0.91in)"
+            config THERMO_OLED_SH1106
+                bool "SH1106 (1.3in)"
+        endchoice
+
+        config THERMO_OLED_I2C_ADDR
+            hex "OLED I2C address"
+            default 0x3C
+
+        config THERMO_ADJUST_TIMEOUT_MS
+            int "Setpoint adjust commit timeout (ms)"
+            default 4000
+
+        config THERMO_DEFAULT_UNITS_FAHRENHEIT
+            bool "Default display units = Fahrenheit"
+            default n
+    endmenu
+
+endmenu

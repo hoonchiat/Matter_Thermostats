@@ -1,0 +1,30 @@
+# ESP32-C6 target defaults: Matter over Thread (802.15.4) with BLE commissioning.
+
+# --- Radio / connectivity ----------------------------------------------------
+# Thread is the operational transport; Wi-Fi is disabled for a Thread-only device.
+CONFIG_ENABLE_MATTER_OVER_THREAD=y
+CONFIG_OPENTHREAD_ENABLED=y
+CONFIG_OPENTHREAD_SRP_CLIENT_ENABLE=y
+CONFIG_OPENTHREAD_DNS_CLIENT_ENABLE=y
+
+# BLE is used only during commissioning, then released.
+CONFIG_BT_ENABLED=y
+CONFIG_BT_NIMBLE_ENABLED=y
+CONFIG_USE_BLE_ONLY_FOR_COMMISSIONING=y
+
+# Disable Wi-Fi for a pure Thread device (saves flash/RAM).
+# CONFIG_ENABLE_WIFI_STATION is intentionally not set.
+
+# --- 802.15.4 radio ----------------------------------------------------------
+CONFIG_IEEE802154_ENABLED=y
+
+# --- mDNS (Matter uses platform mDNS over Thread via SRP) ---------------------
+CONFIG_USE_MINIMAL_MDNS=n
+
+# --- Power / clocks ----------------------------------------------------------
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_160=y
+
+# --- Matter setup payload (DEVELOPMENT ONLY — replace for production) ---------
+# Use Espressif factory/test DAC provider for development builds.
+CONFIG_FACTORY_COMMISSIONABLE_DATA_PROVIDER=n
+CONFIG_ENABLE_TEST_SETUP_PARAMS=y

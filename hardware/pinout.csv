@@ -1,0 +1,18 @@
+signal,gpio,peripheral,direction,notes
+NTC_SENSE,1,ADC1_CH1,analog_in,10K NTC divider node; 12-bit 12dB atten
+I2C_SDA,6,I2C0,bidir,OLED SDA; 4.7k pull-up to 3V3
+I2C_SCL,7,I2C0,out,OLED SCL; 4.7k pull-up to 3V3
+ENC_A,10,PCNT_ch0,in,rotary encoder A/CLK; hardware quadrature
+ENC_B,11,PCNT_ch0,in,rotary encoder B/DT; hardware quadrature
+ENC_SW,2,GPIO_ISR,in,encoder push switch; internal pull-up; select
+BTN_PUSH,3,GPIO_ISR,in,dedicated push button; internal pull-up; mode/back
+RELAY_W_HEAT,18,GPIO,out,heat call; active-high to driver
+RELAY_Y_COOL,19,GPIO,out,cool/compressor call; active-high to driver
+RELAY_G_FAN,20,GPIO,out,fan call; active-high to driver
+RELAY_OB_REV,21,GPIO,out,reversing valve (heat pump); active-high to driver
+STATUS_LED,8,RMT,out,WS2812 RGB status (strapping pin; LED only)
+BTN_RESET,9,GPIO,in,BOOT button reused for factory reset (strapping; pulled-up)
+CONSOLE_TX,16,UART0,out,debug console; keep free
+CONSOLE_RX,17,UART0,in,debug console; keep free
+USB_DM,12,USB_SERIAL_JTAG,bidir,flash/monitor; keep free
+USB_DP,13,USB_SERIAL_JTAG,bidir,flash/monitor; keep free

@@ -1,0 +1,25 @@
+# ESP-IDF build output
+build/
+sdkconfig
+sdkconfig.old
+managed_components/
+dependencies.lock
+
+# Editor / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Python (tools/)
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Host unit-test binaries
+firmware/test/host/test_thermistor
+firmware/test/host/test_thermostat_core
+
+# Logs / local
+*.log

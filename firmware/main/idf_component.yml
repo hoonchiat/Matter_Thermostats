@@ -1,0 +1,11 @@
+# Managed component dependencies (pulled by the IDF Component Manager on first build).
+# The OLED driver is provided as a managed component so we don't vendor a full
+# SSD1306 driver in-tree; the ui_oled component wraps it.
+dependencies:
+  # SSD1306/SH1106 panel driver on top of esp_lcd.
+  espressif/esp_lcd_ssd1306: "^1.0.0"
+  # (Optional) LVGL port if a richer UI is desired later:
+  # lvgl/lvgl: "^8.3.0"
+  # esp_lvgl_port: "^1.4.0"
+  idf:
+    version: ">=5.2.0"

@@ -1,0 +1,20 @@
+ref,qty,item,value_spec,package,notes
+U1,1,ESP32-C6-WROOM-1,8MB flash,module,Thread(802.15.4)+Wi-Fi6+BLE5; -1U for ext antenna
+DS1,1,OLED display,SSD1306 128x64 mono I2C,0.96in module,addr 0x3C; SH1106/128x32 alt
+SW1,1,Rotary encoder w/ switch,EC11 20-detent quadrature+SPST,through-hole,A/B/SW
+SW2,1,Momentary push button,SPST,6mm tact,mode/back input
+RT1,1,NTC thermistor,10k Type 2 or Type 3,2-wire probe,room temperature sensor
+R1,1,Reference resistor,10.0k 0.1% 25ppm,0603,divider top leg (accuracy-critical)
+R2,1,ADC series resistor,1k-2k 1%,0603,ADC input protection with C1
+C1,1,ADC filter cap,100nF X7R,0603,RC low-pass at ADC node
+R3,2,I2C pull-up,4.7k 5%,0603,SDA/SCL to 3V3
+R4,2,Encoder RC,10nF + 1k (per line),0603,A/B debounce (with internal pull-ups)
+K1,4,Relay or opto-triac,24VAC 2A / MOC302x+triac,varies,W/Y/G/O.B outputs (SSR recommended)
+Q1,4,Relay driver,NPN/MOSFET or ULN2003 array,SOT-23/SOIC,GPIO to relay coil
+D1,4,Flyback diode / snubber,1N4148 or RC snubber,varies,per inductive output
+LED1,1,Addressable RGB LED,WS2812B,5050,status indicator (GPIO8/RMT)
+PS1,1,Power supply,USB-C 5V and/or 24VAC->5V isolated,module,C-wire for field install
+C2,3,Bulk/decoupling caps,10uF + 100nF,varies,ride out radio TX current peaks
+J1,1,HVAC terminal block,R/C/W/Y/G/O-B,5.08mm,24VAC field wiring
+J2,1,NTC terminal / connector,2-pos,varies,remote sensor probe
+ANT1,1,Antenna,PCB or u.FL,-,per module variant; keep-out required
