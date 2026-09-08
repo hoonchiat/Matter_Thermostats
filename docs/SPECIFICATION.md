@@ -115,6 +115,7 @@ See [FIRMWARE.md](FIRMWARE.md) for tasks, queues, and the control algorithm, and
 | FR-14 | Allow **remote override** from Matter of System Mode, heating/cooling setpoints, and fan speed; local and remote state stay synchronized and overrides persist. |
 | FR-15 | Present a modern, legible OLED UI (status bar with mode/fan/link indicators, large temperature, setpoint pill), taking cues from the Honeywell Home thermostats. |
 | FR-16 | Support **occupancy** via a PIR/occupancy sensor (with a vacancy timeout) **or** a manual Home/Away toggle (selectable). Use the Matter Thermostat **OCC feature** with separate **unoccupied setpoints** (writable remotely and locally); publish the resolved presence via the `Occupancy` attribute and an Occupancy Sensor endpoint. |
+| FR-17 | Support a selectable room sensor: **10 kΩ NTC** (temperature only) **or** **SHT40** I²C (temperature **+ relative humidity**). With the SHT40, show humidity on the OLED and expose it as a Matter Humidity Sensor. Units (°C/°F) and the 0.5°-per-step setpoint adjust apply to both sensors. |
 
 ## 5. Non-functional requirements
 
@@ -135,8 +136,9 @@ See [FIRMWARE.md](FIRMWARE.md) for tasks, queues, and the control algorithm, and
 Full detail in [HARDWARE.md](HARDWARE.md). Headlines:
 
 - **MCU module:** ESP32-C6-WROOM-1 (or -1U w/ ext. antenna). 8 MB flash recommended.
-- **Sensor front-end:** 10 kΩ NTC in a divider with a **10 kΩ 0.1 % reference resistor**,
-  RC low-pass to the ADC, series/ESD protection. ADC read with curve-fit calibration.
+- **Room sensor (selectable):** 10 kΩ NTC in a divider with a **10 kΩ 0.1 % reference
+  resistor** + RC low-pass to the ADC (curve-fit calibration); **or** a Sensirion **SHT40**
+  I²C temp/humidity sensor on the shared OLED bus (no analog front-end).
 - **Display:** SSD1306 128×64 I²C @ 0x3C.
 - **Input:** EC11 rotary encoder (A/B/SW) + one momentary push button; BOOT button reused
   for factory reset.
@@ -145,9 +147,15 @@ Full detail in [HARDWARE.md](HARDWARE.md). Headlines:
 - **Power:** USB-C (5 V) for bench; on-board 24 VAC→5 V (isolated) + 3.3 V rail for field.
 - **Status:** on-board addressable RGB LED (WS2812) for at-a-glance state.
 
-## 7. Temperature sensing
+## 7. Temperature (& humidity) sensing
 
-The device supports the two common North-American HVAC 10 kΩ NTC curves:
+The room sensor is a build-time choice (menuconfig): a **10 kΩ NTC thermistor** (temperature
+only, analog front-end below) or a **Sensirion SHT40** I²C sensor (temperature **and
+relative humidity**, digital, factory-calibrated, sharing the OLED bus at 0x44). With the
+SHT40, humidity is filtered lightly, shown on the OLED, and published as a Matter Humidity
+Sensor. The user calibration offset (FR-11) and units/step apply to both.
+
+For the NTC option, the device supports the two common North-American HVAC 10 kΩ curves:
 
 - **10 kΩ Type 2 ("10K-2")** — nominal β₍25/85₎ ≈ 3891 K
 - **10 kΩ Type 3 ("10K-3")** — nominal β₍25/85₎ ≈ 3976 K
@@ -211,6 +219,8 @@ Full state table and pseudocode in [FIRMWARE.md §Control](FIRMWARE.md#control-a
     `PercentSetting` — the fan speed, viewable and overridable from Matter.
 - **Endpoint 3** — Occupancy Sensor (`0x0107`):
   - `Occupancy Sensing` (0x0406) — `Occupancy` bit reflecting the resolved Home/Away state.
+- **Endpoint 4** — Humidity Sensor (`0x0307`, only with the SHT40):
+  - `Relative Humidity Measurement` (0x0405) — `MeasuredValue` in %RH × 100.
 
 All three of System Mode, setpoints, and fan speed can be **overridden remotely** and stay
 in sync with the local UI. Full attribute/command list, ranges, and the local↔Matter
@@ -226,7 +236,7 @@ synchronization rules are in [MATTER.md](MATTER.md).
 
 ## 11. Persistence
 
-NVS namespace `thermo_cfg` stores: `sysMode`, `heatSet`, `coolSet`, `deadband`,
+NVS namespace `thermo_cfg` stores: `sensor` (NTC/SHT40), `sysMode`, `heatSet`, `coolSet`, `deadband`,
 `tempOffset`, `units`, `ntcType`, `minOff`, `minOn`, `hpReversing`, `brightness`, `fan`
 (fan speed), `occSrc`/`occHome` (occupancy source + manual Home/Away), and `uHeat`/`uCool`
 (unoccupied setpoints). Matter's own fabric/credential storage is separate (managed by the stack).

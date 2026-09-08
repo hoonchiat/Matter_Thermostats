@@ -40,6 +40,8 @@ typedef struct {
     bool  fan_on;
     int   fan_speed;        /* thermo_fan_speed_t: 0=auto,1=low,2=med,3=high */
     bool  occupied;         /* Home (true) / Away (false) */
+    int   humidity_pct100;  /* relative humidity, 0.01 % */
+    bool  humidity_valid;   /* show humidity? (SHT40 present) */
     bool  fault;
     bool  commissioned;     /* Matter commissioned?                              */
     int   thread_rssi;      /* dBm, for the signal glyph (0 if unknown)          */
@@ -68,6 +70,8 @@ typedef struct {
     int  height;            /* 64 or 32 */
     bool sh1106;            /* true => SH1106, false => SSD1306 */
     int  i2c_hz;            /* e.g. 400000 */
+    void *ext_bus;          /* optional existing i2c_master_bus_handle_t to reuse;
+                               if NULL, the driver creates its own bus from sda/scl */
 } ui_oled_config_t;
 
 /* Initialize the I2C bus + panel and clear the display. */

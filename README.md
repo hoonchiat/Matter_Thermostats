@@ -31,7 +31,8 @@ cloud, no vendor lock-in, all local control over a Thread mesh.
 | **MCU** | ESP32-C6 (RISC-V, native 802.15.4 for Thread, Wi-Fi 6, BLE 5) |
 | **Connectivity** | Matter 1.x over Thread (self-healing mesh; mains-powered → acts as a Thread **router**/range extender); BLE for commissioning |
 | **Device type** | Matter Thermostat (`0x0301`) |
-| **Temperature sensor** | 10 kΩ NTC, HVAC **Type 2** or **Type 3** curve (selectable), voltage-divider + ADC |
+| **Room sensor** | Selectable: **10 kΩ NTC** (HVAC Type 2/3, ADC) **or** **SHT40** I²C (temperature **+ humidity**) |
+| **Humidity** | With SHT40: relative humidity on the OLED and as a Matter Humidity Sensor |
 | **Display** | 0.96″ (nom. "0.95″") **SSD1306** 128×64 monochrome OLED, I²C |
 | **Local input** | Incremental **rotary encoder** (quadrature + integrated switch) and a dedicated **push button** |
 | **HVAC output** | Relay/SSR: W (heat), Y (cool/compressor), G (fan), O·B (reversing valve) + optional 3-tap multi-speed blower |
@@ -64,6 +65,7 @@ Matter_Thermostats/
     ├── main/                 # App entry, Matter wiring, control glue
     └── components/
         ├── thermistor/       # 10K Type 2/3 NTC → °C  (implemented)
+        ├── sht4x/            # SHT40 I2C temp + humidity (implemented)
         ├── rotary_encoder/   # PCNT quadrature decoder + switch (implemented)
         ├── button/           # debounced short/long-press (implemented)
         ├── thermostat_core/  # hysteresis + cycle-protection control (implemented)

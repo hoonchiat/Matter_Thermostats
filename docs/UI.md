@@ -72,7 +72,9 @@ Center / pill:
   degree mark.
 - **Setpoint pill**: the active target (`SET …`); in **Auto** the pill shows both, each with
   its ▲/▼ marker. A filled dot appears in the pill while heating or cooling is called.
-- **Running state** (bottom): `IDLE` / `HEATING` / `COOLING` / `FAN ON`, matching the LED.
+- **Running state** (bottom-left): `IDLE` / `HEATING` / `COOLING` / `FAN ON`, matching the LED.
+- **Humidity** (bottom-right, SHT40 only): relative humidity, e.g. `45%`; hidden with the NTC.
+  Units (°C/°F) and the **0.5°-per-step** setpoint adjust apply regardless of sensor.
 
 These screens can be previewed as ASCII on a host PC — see [§9](#9-previewing-the-ui-no-hardware).
 
@@ -105,7 +107,7 @@ the push button** to go back / close.
 | `PRESENCE: HOME/AWAY` | encoder-press toggles Home/Away (manual); Away switches to the unoccupied setpoints. In `SENSOR` mode this sets the manual preference and the sensor resumes on the next motion | `occHome` |
 | `OCC SRC: MANUAL/SENSOR` | encoder-press chooses whether presence comes from the manual toggle or the PIR/occupancy sensor | `occSrc` |
 | `UNITS: C/F` | encoder-press toggles °C ⇄ °F (also mirrors to the Matter `TemperatureDisplayMode` attribute) | `units` |
-| `SENSOR: TYPE 2/3` | encoder-press toggles the NTC curve; re-applied to the sensor driver live | `ntcType` |
+| `SENSOR: TYPE 2/3` \| `SENSOR: SHT40` | with an NTC, encoder-press toggles the curve (live); with an SHT40 the row is view-only (`SHT40`). The sensor kind itself is a build-time menuconfig choice | `ntcType` |
 | `MATTER CODE >` | encoder-press opens the **INFO screen** showing the manual pairing code (the Matter setup payload number) | — |
 | `BACK` | return to Home | — |
 

@@ -51,6 +51,17 @@ toggle — so controllers and automations can react to presence.
 | Identify | 0x0003 | locate |
 | **Occupancy Sensing** | 0x0406 | `Occupancy` bitmap (bit0 = occupied) |
 
+### Endpoint 4 — Humidity Sensor (`0x0307`) — *only when an SHT40 is fitted*
+
+| Cluster | ID | Role |
+|---|---|---|
+| Identify | 0x0003 | locate |
+| **Relative Humidity Measurement** | 0x0405 | `MeasuredValue` = %RH × 100 (uint16, `null` on fault) |
+
+This endpoint is created only when the room sensor is the **SHT40**; the NTC build has no
+humidity source and omits it, so the data model never advertises humidity the hardware
+cannot measure.
+
 ---
 
 ## 2. Thermostat cluster (0x0201)
@@ -283,6 +294,7 @@ versa — the two are kept in sync bidirectionally.
 | Occupancy change (PIR or manual toggle) | switch occupied↔unoccupied setpoints → `attribute::update(Occupancy)` (thermostat + sensor endpoints) |
 | Local Away-setpoint change (ADJUST while Away) | update state → `attribute::update(Unoccupied*Setpoint)` |
 | Measured temp change ≥ 0.1 °C or every N s | `attribute::update(LocalTemperature)` |
+| Measured humidity change ≥ 1 % or every 60 s (SHT40) | `attribute::update(RelativeHumidityMeasurement.MeasuredValue)` |
 | Output state change | `attribute::update(ThermostatRunningState)` |
 | Sensor fault | `LocalTemperature = null`, outputs off, running state cleared |
 

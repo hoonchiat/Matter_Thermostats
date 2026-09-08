@@ -3,7 +3,8 @@ U1,1,ESP32-C6-WROOM-1,8MB flash,module,Thread(802.15.4)+Wi-Fi6+BLE5; -1U for ext
 DS1,1,OLED display,SSD1306 128x64 mono I2C,0.96in module,addr 0x3C; SH1106/128x32 alt
 SW1,1,Rotary encoder w/ switch,EC11 20-detent quadrature+SPST,through-hole,A/B/SW
 SW2,1,Momentary push button,SPST,6mm tact,mode/back input
-RT1,1,NTC thermistor,10k Type 2 or Type 3,2-wire probe,room temperature sensor
+RT1,1,NTC thermistor,10k Type 2 or Type 3,2-wire probe,room temperature sensor (NTC option)
+U2,1,SHT40 temp/humidity sensor (optional),Sensirion SHT40-AD1B,DFN/module,I2C 0x44 on OLED bus (SHT40 option; replaces NTC+R1)
 R1,1,Reference resistor,10.0k 0.1% 25ppm,0603,divider top leg (accuracy-critical)
 R2,1,ADC series resistor,1k-2k 1%,0603,ADC input protection with C1
 C1,1,ADC filter cap,100nF X7R,0603,RC low-pass at ADC node

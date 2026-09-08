@@ -11,11 +11,13 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 
+#include "driver/i2c_master.h"
 #include "ui_oled.h"
 #include "rotary_encoder.h"
 #include "button.h"
 #include "relays.h"
 #include "occupancy.h"
+#include "sht4x.h"
 
 #define TAG "app_control"
 
@@ -30,6 +32,7 @@ enum { BTN_ID_PUSH = 1, BTN_ID_ENC_SW = 2, BTN_ID_RESET = 3 };
 
 static QueueHandle_t s_btn_q;      /* button_event_t from the button component */
 static int64_t s_last_adjust_ms;   /* for ADJUST auto-timeout                  */
+static i2c_master_bus_handle_t s_i2c_bus;  /* shared by the OLED and the SHT40  */
 
 /* Settings-menu items (order = on-screen order). */
 enum {
@@ -80,35 +83,63 @@ static int setpoint_step_c100(void)
 static void sensor_task(void *arg)
 {
     (void)arg;
-    thermistor_config_t tc = {
-        .adc_gpio      = CONFIG_THERMO_PIN_NTC_ADC,
-        .r_fix_ohm     = CONFIG_THERMO_DIVIDER_RFIX_OHM,
-        .vref_mv       = CONFIG_THERMO_DIVIDER_VREF_MV,
-        .type          = (ntc_type_t)g_state.cfg.ntc_type,
-        .median_n      = CONFIG_THERMO_ADC_MEDIAN_N,
-        .ema_alpha_pct = CONFIG_THERMO_EMA_ALPHA_PCT,
-        .offset_c100   = g_state.cfg.offset_c100,
-    };
-    if (thermistor_init(&tc) != ESP_OK) {
-        ESP_LOGE(TAG, "thermistor init failed");
+    app_lock();
+    bool use_sht = (g_state.cfg.sensor_kind == SENSOR_KIND_SHT40);
+    int  offset_c100 = g_state.cfg.offset_c100;
+    app_unlock();
+
+    if (use_sht) {
+        if (sht4x_init(s_i2c_bus, CONFIG_THERMO_SHT40_ADDR) != ESP_OK) {
+            ESP_LOGE(TAG, "SHT40 init failed");
+        }
+    } else {
+        thermistor_config_t tc = {
+            .adc_gpio      = CONFIG_THERMO_PIN_NTC_ADC,
+            .r_fix_ohm     = CONFIG_THERMO_DIVIDER_RFIX_OHM,
+            .vref_mv       = CONFIG_THERMO_DIVIDER_VREF_MV,
+            .type          = (ntc_type_t)g_state.cfg.ntc_type,
+            .median_n      = CONFIG_THERMO_ADC_MEDIAN_N,
+            .ema_alpha_pct = CONFIG_THERMO_EMA_ALPHA_PCT,
+            .offset_c100   = offset_c100,
+        };
+        if (thermistor_init(&tc) != ESP_OK) {
+            ESP_LOGE(TAG, "thermistor init failed");
+        }
     }
 
     int last_reported = INT32_MIN;
     int64_t last_report_ms = 0;
+    int last_rh_reported = INT32_MIN;
+    int64_t last_rh_ms = 0;
 
     for (;;) {
-        float temp_c = 0.0f;
-        bool fault = false;
-        thermistor_read(&temp_c, &fault);
+        float temp_c = 0.0f, rh_pct = 0.0f;
+        bool fault = false, have_rh = false;
+
+        if (use_sht) {
+            bool f = false;
+            if (sht4x_read(&temp_c, &rh_pct, &f) == ESP_OK && !f) {
+                temp_c += offset_c100 / 100.0f;   /* apply calibration offset */
+                have_rh = true;
+            } else {
+                fault = true;
+            }
+        } else {
+            thermistor_read(&temp_c, &fault);     /* offset applied inside driver */
+        }
+
         int temp_c100 = (int)(temp_c * 100.0f + (temp_c >= 0 ? 0.5f : -0.5f));
+        int rh_pct100 = have_rh ? (int)(rh_pct * 100.0f + 0.5f) : 0;
 
         app_lock();
         g_state.temp_c100 = temp_c100;
         g_state.fault = fault;
+        g_state.humidity_valid = have_rh && !fault;
+        g_state.humidity_pct100 = g_state.humidity_valid ? rh_pct100 : 0;
         app_unlock();
 
-        /* Rate-limited Matter report: on >=0.1C change or every 30 s. */
         int64_t t = now_ms();
+        /* Temperature: report on >=0.1C change or every 30 s. */
         if (fault) {
             app_matter_report_temperature(0, true);
             last_reported = INT32_MIN;
@@ -116,6 +147,13 @@ static void sensor_task(void *arg)
             app_matter_report_temperature(temp_c100, false);
             last_reported = temp_c100;
             last_report_ms = t;
+        }
+        /* Humidity (SHT40): report on >=1% change or every 60 s. */
+        if (have_rh && !fault &&
+            (abs(rh_pct100 - last_rh_reported) >= 100 || (t - last_rh_ms) > 60000)) {
+            app_matter_report_humidity(rh_pct100, true);
+            last_rh_reported = rh_pct100;
+            last_rh_ms = t;
         }
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
@@ -295,9 +333,12 @@ static void menu_activate(bool *changed_units, bool *changed_sensor,
             *changed_units = true; *save = true;
             break;
         case MENU_SENSOR:
-            g_state.cfg.ntc_type =
-                (g_state.cfg.ntc_type == NTC_TYPE_2) ? NTC_TYPE_3 : NTC_TYPE_2;
-            *changed_sensor = true; *save = true;
+            /* NTC curve is only meaningful for the thermistor; SHT40 row is view-only. */
+            if (g_state.cfg.sensor_kind == SENSOR_KIND_NTC) {
+                g_state.cfg.ntc_type =
+                    (g_state.cfg.ntc_type == NTC_TYPE_2) ? NTC_TYPE_3 : NTC_TYPE_2;
+                *changed_sensor = true; *save = true;
+            }
             break;
         case MENU_MATTER_CODE:
             g_state.screen = UI_SCREEN_INFO;      /* show the payload detail */
@@ -408,11 +449,14 @@ static void handle_event(const app_event_t *e)
 
 static void build_model(ui_model_t *m)
 {
-    int ntc_type, fan_speed, occ_source;
+    int ntc_type, fan_speed, occ_source, sensor_kind;
     bool occ_home_pref;
     app_lock();
     bool occ_live = g_state.occupied;
     m->temp_c100      = g_state.temp_c100;
+    m->humidity_pct100 = g_state.humidity_pct100;
+    m->humidity_valid  = g_state.humidity_valid;
+    sensor_kind       = g_state.cfg.sensor_kind;
     /* Show/edit the setpoints currently in effect: unoccupied when Away. */
     m->heat_set_c100  = occ_live ? g_state.cfg.heat_set_c100 : g_state.cfg.unocc_heat_c100;
     m->cool_set_c100  = occ_live ? g_state.cfg.cool_set_c100 : g_state.cfg.unocc_cool_c100;
@@ -449,8 +493,11 @@ static void build_model(ui_model_t *m)
     snprintf(s_menu_occsrc, sizeof(s_menu_occsrc), "OCC SRC: %s",
              occ_source == OCC_SRC_SENSOR ? "SENSOR" : "MANUAL");
     snprintf(s_menu_units,  sizeof(s_menu_units),  "UNITS: %s", m->fahrenheit ? "F" : "C");
-    snprintf(s_menu_sensor, sizeof(s_menu_sensor), "SENSOR: TYPE %d",
-             ntc_type == NTC_TYPE_2 ? 2 : 3);
+    if (sensor_kind == SENSOR_KIND_SHT40)
+        snprintf(s_menu_sensor, sizeof(s_menu_sensor), "SENSOR: SHT40");
+    else
+        snprintf(s_menu_sensor, sizeof(s_menu_sensor), "SENSOR: TYPE %d",
+                 ntc_type == NTC_TYPE_2 ? 2 : 3);
     s_menu_lines[MENU_FAN]         = s_menu_fan;
     s_menu_lines[MENU_PRESENCE]    = s_menu_presence;
     s_menu_lines[MENU_OCC_SRC]     = s_menu_occsrc;
@@ -505,6 +552,7 @@ static void ui_task(void *arg)
         .sh1106 = false,
 #endif
         .i2c_hz = 400000,
+        .ext_bus = s_i2c_bus,      /* reuse the shared bus (also used by SHT40) */
     };
     ui_oled_init(&oc);
     app_lock();
@@ -547,6 +595,20 @@ static void ui_task(void *arg)
 
 void app_control_start(void)
 {
+    /* One shared I2C master bus for the OLED and (if fitted) the SHT40 —
+     * created here, before the tasks, so both can add their device to it. */
+    i2c_master_bus_config_t bus_cfg = {
+        .i2c_port = 0,
+        .sda_io_num = CONFIG_THERMO_PIN_I2C_SDA,
+        .scl_io_num = CONFIG_THERMO_PIN_I2C_SCL,
+        .clk_source = I2C_CLK_SRC_DEFAULT,
+        .flags.enable_internal_pullup = true,
+    };
+    if (i2c_new_master_bus(&bus_cfg, &s_i2c_bus) != ESP_OK) {
+        ESP_LOGE(TAG, "shared I2C bus init failed");
+        s_i2c_bus = NULL;
+    }
+
     xTaskCreate(sensor_task,  "sensor",  4096, NULL, 5, NULL);
     xTaskCreate(control_task, "control", 4096, NULL, 6, NULL);
     xTaskCreate(ui_task,      "ui",      5120, NULL, 4, NULL);

@@ -18,6 +18,7 @@ firmware/
 │   └── Kconfig.projbuild     # all pins & defaults exposed to menuconfig
 └── components/
     ├── thermistor/           # ADC + NTC(Type2/3) → °C          [implemented]
+    ├── sht4x/                # SHT40 I2C temp + humidity         [implemented]
     ├── rotary_encoder/       # PCNT quadrature + switch          [implemented]
     ├── button/               # debounce + short/long press       [implemented]
     ├── thermostat_core/      # mode/hysteresis/cycle-timer law    [implemented, pure]
@@ -64,7 +65,7 @@ safety logic isolated from Matter/driver churn.
 
 | Task | Prio | Period | Responsibility |
 |---|---|---|---|
-| `sensor_task` | med | 1 Hz | sample ADC, convert, filter, publish temp + fault |
+| `sensor_task` | med | 1 Hz | read the selected sensor (NTC via ADC, or SHT40 via I²C), publish temp (+ humidity for SHT40) + fault |
 | `control_task` | high | 0.5 s | run `thermostat_core`, drive relays, timers, push Matter attrs |
 | `ui_task` | low | event + 10 Hz redraw | encoder/button handling, OLED rendering |
 | CHIP event loop | (stack) | — | Matter interaction model, Thread |
@@ -186,8 +187,9 @@ Fault). See [UI.md](UI.md).
 
 `app_matter.cpp` creates the endpoints/clusters and registers callbacks:
 
-- **Endpoints:** Root (0), Thermostat 0x0301 (1), Fan 0x002B (2, Fan Control), and
-  Occupancy Sensor 0x0107 (3, Occupancy Sensing).
+- **Endpoints:** Root (0), Thermostat 0x0301 (1), Fan 0x002B (2, Fan Control),
+  Occupancy Sensor 0x0107 (3, Occupancy Sensing), and — only with an SHT40 — Humidity
+  Sensor 0x0307 (4, Relative Humidity Measurement).
 - **Attribute update callback** (remote write, `PRE_UPDATE`): translate `SystemMode`,
   `OccupiedHeatingSetpoint`, `OccupiedCoolingSetpoint`, `TemperatureDisplayMode`, and
   `FanControl::FanMode`/`PercentSetting` writes → `app_event`s → update `app_state` →
@@ -236,9 +238,9 @@ OTA A/B + NVS). See `firmware/sdkconfig.defaults` and `firmware/sdkconfig.defaul
 
 - **Host unit tests** for `thermistor` (R→T against known points), `thermostat_core`
   (hysteresis boundaries, min-off/min-on gating, auto dead-zone, fan-speed levels,
-  fail-safe), and `occupancy` (vacancy-timeout boundaries, clock-anomaly fail-safe). These
-  components are pure C with no ESP dependency, so they compile and run on a PC:
-  `cd firmware/test/host && make`.
+  fail-safe), `occupancy` (vacancy-timeout boundaries, clock-anomaly fail-safe), and
+  `sht4x` (Sensirion CRC-8 vector + tick→°C/%RH conversions). These components are pure C
+  with no ESP dependency, so they compile and run on a PC: `cd firmware/test/host && make`.
 - **Host UI preview:** `make preview` renders every OLED screen to the terminal as ASCII
   (the `ui_oled` drawing path compiles under `UI_OLED_HOST`), so layouts are verifiable
   without hardware.

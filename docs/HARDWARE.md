@@ -61,7 +61,19 @@ menuconfig option — change the board without touching code.
 
 ---
 
-## 3. Thermistor front-end
+## 3. Room sensor
+
+Two build-time options (menuconfig → *Temperature / humidity sensor → Room sensor*):
+
+| Option | Interface | Provides | Notes |
+|---|---|---|---|
+| **10 kΩ NTC** (Type 2/3) | ADC (GPIO1) | temperature | the analog front-end below |
+| **SHT40** | I²C (0x44, shared OLED bus) | temperature **+ humidity** | no analog parts; digital, factory-calibrated |
+
+With the **SHT40**, the divider/ADC front-end (§3.1–3.4) is unpopulated — the sensor is a
+3-wire I²C part (VDD/GND/SDA/SCL) sharing the OLED bus, so it needs no extra MCU pins. Its
+humidity is surfaced on the OLED and as a Matter Humidity Sensor. The rest of this section
+covers the NTC analog front-end.
 
 ### 3.1 Divider topology
 
@@ -157,7 +169,8 @@ Self-heating is negligible: with `R_fix` = 10 kΩ the NTC dissipates ≲ 0.3 mW.
 
 - **Default:** SSD1306, 128×64, monochrome, I²C, address **0x3C** (0x3D selectable).
 - **Alternates:** SH1106 128×64 (firmware flag), SSD1306 128×32 0.91″ (reduced layout).
-- Shared I²C0 bus @ 400 kHz. Bus has headroom for a future humidity sensor (e.g. SHT4x).
+- Shared **I²C0 bus @ 400 kHz** — the OLED (0x3C) and the optional **SHT40** (0x44) sit on
+  the same two wires. The firmware creates one I²C master bus and adds both devices to it.
 
 ### OLED options
 
