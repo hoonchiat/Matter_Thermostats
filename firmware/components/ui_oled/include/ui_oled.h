@@ -39,6 +39,7 @@ typedef struct {
     bool  calling_cool;
     bool  fan_on;
     int   fan_speed;        /* thermo_fan_speed_t: 0=auto,1=low,2=med,3=high */
+    bool  occupied;         /* Home (true) / Away (false) */
     bool  fault;
     bool  commissioned;     /* Matter commissioned?                              */
     int   thread_rssi;      /* dBm, for the signal glyph (0 if unknown)          */
@@ -47,7 +48,7 @@ typedef struct {
 
     /* MENU screen: a small scrollable list. Each line is already formatted as
      * "LABEL: VALUE"; the selected row is highlighted. */
-#define UI_MENU_MAX 6
+#define UI_MENU_MAX 8
     const char *menu_lines[UI_MENU_MAX];
     int   menu_count;
     int   menu_index;       /* highlighted row                                   */

@@ -15,10 +15,11 @@ cloud, no vendor lock-in, all local control over a Thread mesh.
 > logic (thermistor conversion, control/hysteresis with fan-speed levels, encoder & button
 > input), a modern OLED UI (5×7 font, status bar with mode/fan/link icons, rounded setpoint
 > pill; home/adjust/menu/info/pairing/fault screens — previewable on a host PC), the local
-> **settings menu** (fan Auto/Low/Med/High, NTC Type 2/3, °C/°F, Matter pairing code), and
-> full **remote override from Matter** of mode, setpoints and fan speed. Commissioning
-> mirrors the esp-matter `light` example. The Matter endpoint wiring is laid out with
-> clearly marked integration points against the installed SDK version. See
+> **settings menu** (fan Auto/Low/Med/High, Home/Away presence + source, NTC Type 2/3, °C/°F,
+> Matter pairing code), **occupancy** (PIR sensor or manual toggle → setback, published as a
+> Matter Occupancy Sensor), and full **remote override from Matter** of mode, setpoints and
+> fan speed. Commissioning mirrors the esp-matter `light` example. The Matter endpoint wiring
+> is laid out with clearly marked integration points against the installed SDK version. See
 > [`docs/SPECIFICATION.md`](docs/SPECIFICATION.md).
 
 ---
@@ -35,6 +36,7 @@ cloud, no vendor lock-in, all local control over a Thread mesh.
 | **Local input** | Incremental **rotary encoder** (quadrature + integrated switch) and a dedicated **push button** |
 | **HVAC output** | Relay/SSR: W (heat), Y (cool/compressor), G (fan), O·B (reversing valve) + optional 3-tap multi-speed blower |
 | **Fan control** | Auto / Low / Med / High — local (menu) and remote (Matter Fan Control cluster) |
+| **Occupancy** | PIR/occupancy sensor **or** manual Home/Away toggle → heating/cooling setback; published as a Matter Occupancy Sensor |
 | **Modes** | Off / Heat / Cool / Auto / Fan-only (Honeywell-Home-style UX) |
 | **Power** | USB-C 5 V (bench) or 24 VAC → 5 V (field install) |
 | **Framework** | ESP-IDF v5.x + ESP-Matter |
@@ -65,6 +67,7 @@ Matter_Thermostats/
         ├── rotary_encoder/   # PCNT quadrature decoder + switch (implemented)
         ├── button/           # debounced short/long-press (implemented)
         ├── thermostat_core/  # hysteresis + cycle-protection control (implemented)
+        ├── occupancy/        # PIR sensor + vacancy timeout / manual Home-Away (implemented)
         └── ui_oled/          # SSD1306 screen manager + 5x7 font + settings menu (implemented)
 ```
 

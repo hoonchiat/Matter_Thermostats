@@ -36,13 +36,18 @@ int main(void)
     ui_oled_init(&cfg);
 
     ui_model_t m = {0};
-    m.commissioned = true;
+    m.commissioned = true; m.occupied = true;
     m.temp_c100 = 2140; m.heat_set_c100 = 2000; m.cool_set_c100 = 2600;
 
     /* HOME — heating call, fan HIGH, °C */
     m.screen = UI_SCREEN_HOME; m.mode = 1; m.calling_heat = true; m.fan_on = true;
     m.fan_speed = 3; m.active_setpoint = 0;
     ui_oled_render(&m); dump("HOME  (HEAT, calling, fan HIGH)");
+
+    /* HOME — AWAY (occupancy setback), idle */
+    m.calling_heat = false; m.fan_on = false; m.fan_speed = 0; m.occupied = false;
+    ui_oled_render(&m); dump("HOME  (AWAY / occupancy setback)");
+    m.occupied = true;
 
     /* HOME — AUTO, idle, fan AUTO, °F */
     m.mode = 3; m.calling_heat = false; m.calling_cool = false; m.fan_on = false;
@@ -54,12 +59,13 @@ int main(void)
     m.screen = UI_SCREEN_ADJUST; m.mode = 1; m.active_setpoint = 0;
     ui_oled_render(&m); dump("ADJUST (heat setpoint)");
 
-    /* MENU */
-    m.screen = UI_SCREEN_MENU; m.menu_index = 0;
-    const char *lines[] = { "FAN: HIGH", "UNITS: C", "SENSOR: TYPE 3", "MATTER CODE >", "BACK" };
-    for (int i = 0; i < 5; ++i) m.menu_lines[i] = lines[i];
-    m.menu_count = 5;
-    ui_oled_render(&m); dump("MENU  (FAN row selected)");
+    /* MENU — 7 rows; select PRESENCE (shows scrolling window + scrollbar) */
+    m.screen = UI_SCREEN_MENU; m.menu_index = 1;
+    const char *lines[] = { "FAN: AUTO", "PRESENCE: HOME", "OCC SRC: SENSOR",
+                            "UNITS: C", "SENSOR: TYPE 3", "MATTER CODE >", "BACK" };
+    for (int i = 0; i < 7; ++i) m.menu_lines[i] = lines[i];
+    m.menu_count = 7;
+    ui_oled_render(&m); dump("MENU  (PRESENCE selected; scrollbar)");
 
     /* INFO — Matter pairing code */
     m.screen = UI_SCREEN_INFO;

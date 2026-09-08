@@ -14,6 +14,7 @@ idf_component_register(
         thermostat_core
         relays
         ui_oled
+        occupancy
         # ESP-IDF + Matter:
         nvs_flash
         esp_matter

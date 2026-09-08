@@ -32,6 +32,7 @@ using namespace chip::app::Clusters;
 
 static uint16_t s_ep = 0;       /* thermostat endpoint id */
 static uint16_t s_fan_ep = 0;   /* fan (Fan Control) endpoint id */
+static uint16_t s_occ_ep = 0;   /* occupancy sensor endpoint id */
 
 /* ---- mode conversion (Matter SystemMode <-> thermo_mode_t) ---------------- */
 
@@ -225,6 +226,18 @@ int app_matter_start(void)
      * AUTO feature (cluster::fan_control::feature::auto::add(...)) so FanMode
      * Auto is advertised as supported. */
 
+    /* Endpoint 3: an Occupancy Sensor (0x0107) exposing the resolved Home/Away
+     * state (from the PIR sensor or the manual toggle) to the ecosystem. */
+    /* TODO(matter): occupancy_sensor::config_t field names track the SDK version;
+     * cross-check occupancy_sensing.occupancy / occupancy_sensor_type against yours. */
+    occupancy_sensor::config_t occ_cfg;
+    app_lock();
+    occ_cfg.occupancy_sensing.occupancy = g_state.cfg.occ_manual_home ? 1 : 0;
+    app_unlock();
+    endpoint_t *oep = occupancy_sensor::create(node, &occ_cfg, ENDPOINT_FLAG_NONE, NULL);
+    if (!oep) { ESP_LOGE(TAG, "occupancy endpoint failed"); return ESP_FAIL; }
+    s_occ_ep = endpoint::get_id(oep);
+
     esp_matter::start(app_device_event_cb);
 
     /* Print the QR + manual pairing code to the console, same as the light
@@ -237,7 +250,8 @@ int app_matter_start(void)
     esp_matter::console::init();
 #endif
 
-    ESP_LOGI(TAG, "matter started: thermostat ep=%u, fan ep=%u", s_ep, s_fan_ep);
+    ESP_LOGI(TAG, "matter started: thermostat ep=%u, fan ep=%u, occ ep=%u",
+             s_ep, s_fan_ep, s_occ_ep);
     return ESP_OK;
 }
 
@@ -298,6 +312,15 @@ void app_matter_report_fan(int fan_speed)
     if (!s_fan_ep) return;
     esp_matter_attr_val_t val = esp_matter_enum8(fan_to_matter(fan_speed));
     attribute::update(s_fan_ep, FanControl::Id, FanControl::Attributes::FanMode::Id, &val);
+}
+
+void app_matter_report_occupancy(bool occupied)
+{
+    if (!s_occ_ep) return;
+    /* Occupancy attribute is a bitmap8; bit0 = occupied. */
+    esp_matter_attr_val_t val = esp_matter_bitmap8(occupied ? 1 : 0);
+    attribute::update(s_occ_ep, OccupancySensing::Id,
+                      OccupancySensing::Attributes::Occupancy::Id, &val);
 }
 
 void app_matter_factory_reset(void)

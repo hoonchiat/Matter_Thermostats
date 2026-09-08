@@ -41,6 +41,16 @@ be viewed and **overridden** from any ecosystem.
 | **Fan Control** | 0x0202 | fan speed (Auto / Low / Med / High) |
 | Groups | 0x0004 | *(optional)* |
 
+### Endpoint 3 — Occupancy Sensor (`0x0107`)
+
+Publishes the resolved **Home / Away** state — from the PIR/occupancy sensor or the manual
+toggle — so controllers and automations can react to presence.
+
+| Cluster | ID | Role |
+|---|---|---|
+| Identify | 0x0003 | locate |
+| **Occupancy Sensing** | 0x0406 | `Occupancy` bitmap (bit0 = occupied) |
+
 ---
 
 ## 2. Thermostat cluster (0x0201)
@@ -145,6 +155,28 @@ stay in sync; a remote write updates the device and the OLED. Single-speed insta
 
 ---
 
+## 3b. Occupancy Sensing cluster (0x0406, endpoint 3)
+
+| Attribute | ID | Type | Access | Notes |
+|---|---|---|---|---|
+| Occupancy | 0x0000 | bitmap8 | R | bit0 = occupied (Home) |
+| OccupancySensorType | 0x0001 | enum8 | R | PIR / occupancy (set per sensor) |
+| OccupancySensorTypeBitmap | 0x0002 | bitmap8 | R | supported types |
+
+The reported occupancy is the **resolved** Home/Away state: the PIR sensor (with the
+vacancy timeout) when the source is `Sensor` and a sensor is wired, otherwise the manual
+Home/Away toggle. When Away, the control loop applies the configured heating/cooling
+**setback** to the effective setpoints (the base setpoints and the Matter setpoint
+attributes are unchanged). This is read-only to controllers — presence is a sensor input,
+not a remote command; the local menu toggles it.
+
+> Future: the Matter Thermostat OCC feature adds `UnoccupiedHeatingSetpoint` (0x0013) /
+> `UnoccupiedCoolingSetpoint` (0x0014) and an `Occupancy` attribute (0x0002) on the
+> Thermostat cluster itself. This design uses a setback offset instead; migrating to the
+> OCC feature is a drop-in enhancement (hooks noted in `app_control.cpp`).
+
+---
+
 ## 4. Basic Information (set these before shipping)
 
 | Field | Value (example) |
@@ -212,6 +244,7 @@ versa — the two are kept in sync bidirectionally.
 | Local mode change (button) | update state → `attribute::update(SystemMode)` |
 | Local fan-speed change (menu) | update state → `attribute::update(FanMode)` |
 | Local units change (menu) | update state → `attribute::update(TemperatureDisplayMode)` |
+| Occupancy change (PIR or manual toggle) | apply/clear Away setback → `attribute::update(Occupancy)` |
 | Measured temp change ≥ 0.1 °C or every N s | `attribute::update(LocalTemperature)` |
 | Output state change | `attribute::update(ThermostatRunningState)` |
 | Sensor fault | `LocalTemperature = null`, outputs off, running state cleared |

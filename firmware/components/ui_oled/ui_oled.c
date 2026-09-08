@@ -92,8 +92,9 @@ static void fb_flush(void)
 
 #include "font5x7.inc"
 
-/* Blit one glyph at (x,y) top-left, scaled. Lowercase is up-cased. */
-static void draw_char(int x, int y, char c, int scale)
+/* Blit one glyph at (x,y) top-left, scaled, drawing pixels as `on`
+ * (on=false clears — used to render inverse text over a highlight bar). */
+static void draw_char_mode(int x, int y, char c, int scale, bool on)
 {
     if (c >= 'a' && c <= 'z') c -= 32;           /* up-case */
     if (c < FONT5X7_FIRST || c > FONT5X7_LAST) c = ' ';
@@ -102,8 +103,8 @@ static void draw_char(int x, int y, char c, int scale)
         uint8_t bits = g[col];
         for (int row = 0; row < 7; ++row) {
             if (bits & (1u << row)) {
-                if (scale == 1) fb_pixel(x + col, y + row, true);
-                else fb_fill_rect(x + col * scale, y + row * scale, scale, scale, true);
+                if (scale == 1) fb_pixel(x + col, y + row, on);
+                else fb_fill_rect(x + col * scale, y + row * scale, scale, scale, on);
             }
         }
     }
@@ -114,10 +115,20 @@ static int draw_text(int x, int y, const char *str, int scale)
 {
     if (!str) return x;
     for (const char *c = str; *c; ++c) {
-        draw_char(x, y, *c, scale);
+        draw_char_mode(x, y, *c, scale, true);
         x += 6 * scale;
     }
     return x;
+}
+
+/* Inverse text: clear glyph pixels (for drawing over a filled highlight bar). */
+static void draw_text_inv(int x, int y, const char *str, int scale)
+{
+    if (!str) return;
+    for (const char *c = str; *c; ++c) {
+        draw_char_mode(x, y, *c, scale, false);
+        x += 6 * scale;
+    }
 }
 
 static int text_width(const char *str, int scale)
@@ -293,6 +304,12 @@ static void render_home(const ui_model_t *m)
     const char *rs = m->calling_heat ? "HEATING" :
                      (m->calling_cool ? "COOLING" : (m->fan_on ? "FAN ON" : "IDLE"));
     draw_text(2, 56, rs, 1);
+
+    /* Away indicator (occupancy setback active). */
+    if (!m->occupied) {
+        const char *aw = "AWAY";
+        draw_text(s.cfg.width - text_width(aw, 1) - 2, 56, aw, 1);
+    }
 }
 
 static void render_adjust(const ui_model_t *m)
@@ -314,35 +331,42 @@ static void render_adjust(const ui_model_t *m)
     fb_fill_rect(12, 56, frac, 5, true);
 }
 
+#define MENU_VISIBLE 5      /* rows that fit under the title (y 14..63, 10px each) */
+
 static void render_menu(const ui_model_t *m)
 {
     draw_text(2, 0, "SETTINGS", 1);
     fb_hline(0, s.cfg.width - 1, 10, true);
-    int y = 14;
-    for (int i = 0; i < m->menu_count && i < UI_MENU_MAX; ++i) {
-        bool sel = (i == m->menu_index);
-        if (sel) {
-            fb_fill_rect(0, y - 1, s.cfg.width, 10, true);  /* highlight bar */
-        }
-        /* Draw text; where the highlight is on, invert by clearing pixels. */
-        int x0 = 4;
+
+    int total = m->menu_count;
+    bool bar = total > MENU_VISIBLE;             /* show a scrollbar? */
+    int row_w = bar ? s.cfg.width - 4 : s.cfg.width;
+
+    /* Scroll window: keep the selection centered where possible. */
+    int first = m->menu_index - MENU_VISIBLE / 2;
+    if (first > total - MENU_VISIBLE) first = total - MENU_VISIBLE;
+    if (first < 0) first = 0;
+
+    for (int r = 0; r < MENU_VISIBLE && (first + r) < total; ++r) {
+        int i = first + r;
+        int y = 14 + r * 10;
         const char *txt = m->menu_lines[i] ? m->menu_lines[i] : "";
-        if (!sel) {
-            draw_text(x0, y, txt, 1);
+        if (i == m->menu_index) {
+            fb_fill_rect(0, y - 1, row_w, 10, true);   /* highlight bar */
+            draw_text_inv(4, y, txt, 1);
         } else {
-            /* Simple inverse: draw text then knock it back out of the bar. */
-            for (const char *c = txt; *c; ++c) {
-                char cc = *c;
-                if (cc >= 'a' && cc <= 'z') cc -= 32;
-                if (cc < FONT5X7_FIRST || cc > FONT5X7_LAST) cc = ' ';
-                const uint8_t *g = font5x7[(int)cc - FONT5X7_FIRST];
-                for (int col = 0; col < 5; ++col)
-                    for (int row = 0; row < 7; ++row)
-                        if (g[col] & (1u << row)) fb_pixel(x0 + col, y + row, false);
-                x0 += 6;
-            }
+            draw_text(4, y, txt, 1);
         }
-        y += 10;
+    }
+
+    /* Scrollbar: track on the right + a proportional thumb. */
+    if (bar) {
+        int x = s.cfg.width - 2;
+        int top = 13, h = s.cfg.height - top;      /* track height */
+        for (int j = 0; j < h; ++j) fb_pixel(x, top + j, (j & 1) == 0);  /* dotted track */
+        int thumb_h = h * MENU_VISIBLE / total; if (thumb_h < 6) thumb_h = 6;
+        int thumb_y = top + (h - thumb_h) * first / (total - MENU_VISIBLE);
+        fb_fill_rect(x - 1, thumb_y, 3, thumb_h, true);
     }
 }
 

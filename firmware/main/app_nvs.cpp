@@ -34,6 +34,14 @@ void app_config_defaults(app_config_t *cfg)
     cfg->hp_reversing  = THERMO_HP_NONE;
     cfg->brightness    = 200;
     cfg->fan_speed     = THERMO_FAN_AUTO;
+#if CONFIG_THERMO_OCC_SOURCE_SENSOR
+    cfg->occ_source    = OCC_SRC_SENSOR;
+#else
+    cfg->occ_source    = OCC_SRC_MANUAL;
+#endif
+    cfg->occ_manual_home = true;    /* default Home */
+    cfg->away_heat_c10 = CONFIG_THERMO_AWAY_HEAT_SETBACK_C10;
+    cfg->away_cool_c10 = CONFIG_THERMO_AWAY_COOL_SETBACK_C10;
 }
 
 static void get_i32(nvs_handle_t h, const char *k, int *v)
@@ -68,6 +76,10 @@ int app_nvs_load(app_config_t *cfg)
     get_i32(h, "hp",       &cfg->hp_reversing);
     get_i32(h, "bright",   &cfg->brightness);
     get_i32(h, "fan",      &cfg->fan_speed);
+    get_i32(h, "occSrc",   &cfg->occ_source);
+    get_u8b(h, "occHome",  &cfg->occ_manual_home);
+    get_i32(h, "awayH",    &cfg->away_heat_c10);
+    get_i32(h, "awayC",    &cfg->away_cool_c10);
     nvs_close(h);
     ESP_LOGI(TAG, "config loaded");
     return ESP_OK;
@@ -91,6 +103,10 @@ int app_nvs_save(const app_config_t *cfg)
     nvs_set_i32(h, "hp",       cfg->hp_reversing);
     nvs_set_i32(h, "bright",   cfg->brightness);
     nvs_set_i32(h, "fan",      cfg->fan_speed);
+    nvs_set_i32(h, "occSrc",   cfg->occ_source);
+    nvs_set_u8 (h, "occHome",  cfg->occ_manual_home ? 1 : 0);
+    nvs_set_i32(h, "awayH",    cfg->away_heat_c10);
+    nvs_set_i32(h, "awayC",    cfg->away_cool_c10);
 
     err = nvs_commit(h);
     nvs_close(h);

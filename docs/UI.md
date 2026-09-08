@@ -102,10 +102,16 @@ the push button** to go back / close.
 | Row | Action | Persisted key |
 |---|---|---|
 | `FAN: AUTO/LOW/MED/HIGH` | encoder-press cycles the fan speed; mirrored to the Matter Fan Control `FanMode` attribute | `fan` |
+| `PRESENCE: HOME/AWAY` | encoder-press toggles Home/Away (manual); applies the occupancy setback. In `SENSOR` mode this sets the manual preference and the sensor resumes on the next motion | `occHome` |
+| `OCC SRC: MANUAL/SENSOR` | encoder-press chooses whether presence comes from the manual toggle or the PIR/occupancy sensor | `occSrc` |
 | `UNITS: C/F` | encoder-press toggles °C ⇄ °F (also mirrors to the Matter `TemperatureDisplayMode` attribute) | `units` |
 | `SENSOR: TYPE 2/3` | encoder-press toggles the NTC curve; re-applied to the sensor driver live | `ntcType` |
 | `MATTER CODE >` | encoder-press opens the **INFO screen** showing the manual pairing code (the Matter setup payload number) | — |
 | `BACK` | return to Home | — |
+
+The list **scrolls** (5 rows visible) with a scrollbar when there are more items than fit;
+the selection stays centered. When **Away**, an `AWAY` badge shows on the Home screen's
+bottom row and the heating/cooling setback is applied.
 
 Fan speed can also be changed remotely from any Matter controller (see
 [MATTER.md](MATTER.md)); local and remote stay in sync. `AUTO` runs the fan only during a

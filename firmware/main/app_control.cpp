@@ -15,6 +15,7 @@
 #include "rotary_encoder.h"
 #include "button.h"
 #include "relays.h"
+#include "occupancy.h"
 
 #define TAG "app_control"
 
@@ -33,6 +34,8 @@ static int64_t s_last_adjust_ms;   /* for ADJUST auto-timeout                  *
 /* Settings-menu items (order = on-screen order). */
 enum {
     MENU_FAN = 0,       /* fan speed: AUTO / LOW / MED / HIGH */
+    MENU_PRESENCE,      /* Home / Away (manual toggle)        */
+    MENU_OCC_SRC,       /* occupancy source: MANUAL / SENSOR  */
     MENU_UNITS,         /* °C / °F                    */
     MENU_SENSOR,        /* NTC Type 2 / Type 3        */
     MENU_MATTER_CODE,   /* view Matter pairing code   */
@@ -54,6 +57,8 @@ static const char *fan_speed_name(int s)
 /* Persistent buffers backing the UI model's string pointers (ui_task only). */
 static char s_code[24];
 static char s_menu_fan[20];
+static char s_menu_presence[20];
+static char s_menu_occsrc[20];
 static char s_menu_units[20];
 static char s_menu_sensor[20];
 static const char *s_menu_lines[UI_MENU_MAX];
@@ -133,10 +138,18 @@ static void control_task(void *arg)
     };
     relays_init(&rc);
 
+    occupancy_config_t oc = {
+        .gpio = CONFIG_THERMO_PIN_OCCUPANCY,
+        .vacancy_timeout_s = CONFIG_THERMO_OCC_VACANCY_TIMEOUT_S,
+        .active_high = CONFIG_THERMO_OCC_SENSOR_ACTIVE_HIGH,
+    };
+    occupancy_init(&oc);
+
     thermo_state_t core = {0};
     thermo_core_init(&core, now_ms());
 
     bool last_h = false, last_c = false, last_f = false;
+    bool last_occ = true, occ_reported = false;
 
     for (;;) {
         app_lock();
@@ -154,11 +167,23 @@ static void control_task(void *arg)
         tcfg.hp_mode   = (thermo_hp_mode_t)cfg.hp_reversing;
         tcfg.fan_call_speed = CONFIG_THERMO_FAN_CALL_SPEED;
 
+        /* Resolve Home/Away from the sensor (if selected & wired) or the manual
+         * toggle, then apply the Away setback to the effective setpoints. */
+        bool occupied = (cfg.occ_source == OCC_SRC_SENSOR && occupancy_sensor_present())
+                          ? occupancy_poll((uint64_t)now_ms())
+                          : cfg.occ_manual_home;
+        int heat_eff = cfg.heat_set_c100;
+        int cool_eff = cfg.cool_set_c100;
+        if (!occupied) {
+            heat_eff = clampi(cfg.heat_set_c100 - cfg.away_heat_c10 * 10, HEAT_MIN, HEAT_MAX);
+            cool_eff = clampi(cfg.cool_set_c100 + cfg.away_cool_c10 * 10, COOL_MIN, COOL_MAX);
+        }
+
         thermo_input_t in = {
             .mode        = (thermo_mode_t)cfg.mode,
             .temp_c      = temp_c100 / 100.0f,
-            .heat_set_c  = cfg.heat_set_c100 / 100.0f,
-            .cool_set_c  = cfg.cool_set_c100 / 100.0f,
+            .heat_set_c  = heat_eff / 100.0f,
+            .cool_set_c  = cool_eff / 100.0f,
             .fault       = fault,
             .fan_speed   = cfg.fan_speed,
             .now_ms      = (uint64_t)now_ms(),
@@ -174,11 +199,16 @@ static void control_task(void *arg)
         g_state.calling_heat = out.w_heat;
         g_state.calling_cool = out.y_cool;
         g_state.fan_on = out.g_fan;
+        g_state.occupied = occupied;
         app_unlock();
 
         if (out.w_heat != last_h || out.y_cool != last_c || out.g_fan != last_f) {
             app_matter_report_running_state(out.w_heat, out.y_cool, out.g_fan);
             last_h = out.w_heat; last_c = out.y_cool; last_f = out.g_fan;
+        }
+        if (!occ_reported || occupied != last_occ) {
+            app_matter_report_occupancy(occupied);
+            last_occ = occupied; occ_reported = true;
         }
         vTaskDelay(pdMS_TO_TICKS(500));
     }
@@ -245,6 +275,18 @@ static void menu_activate(bool *changed_units, bool *changed_sensor,
             /* cycle AUTO -> LOW -> MED -> HIGH -> AUTO */
             g_state.cfg.fan_speed = (g_state.cfg.fan_speed + 1) % 4;
             *changed_fan = true; *save = true;
+            break;
+        case MENU_PRESENCE:
+            /* Manual Home/Away toggle. In SENSOR mode this sets the manual
+             * preference; the sensor resumes control on the next motion. The
+             * control loop applies/reports the resolved occupancy. */
+            g_state.cfg.occ_manual_home = !g_state.cfg.occ_manual_home;
+            *save = true;
+            break;
+        case MENU_OCC_SRC:
+            g_state.cfg.occ_source =
+                (g_state.cfg.occ_source == OCC_SRC_SENSOR) ? OCC_SRC_MANUAL : OCC_SRC_SENSOR;
+            *save = true;
             break;
         case MENU_UNITS:
             g_state.cfg.fahrenheit = !g_state.cfg.fahrenheit;
@@ -358,7 +400,8 @@ static void handle_event(const app_event_t *e)
 
 static void build_model(ui_model_t *m)
 {
-    int ntc_type, fan_speed;
+    int ntc_type, fan_speed, occ_source;
+    bool occ_home_pref;
     app_lock();
     m->temp_c100      = g_state.temp_c100;
     m->heat_set_c100  = g_state.cfg.heat_set_c100;
@@ -369,6 +412,7 @@ static void build_model(ui_model_t *m)
     m->calling_cool   = g_state.calling_cool;
     m->fan_on         = g_state.fan_on;
     m->fan_speed      = g_state.cfg.fan_speed;
+    m->occupied       = g_state.occupied;
     m->fault          = g_state.fault;
     m->commissioned   = g_state.commissioned;
     m->thread_rssi    = g_state.thread_rssi;
@@ -377,6 +421,8 @@ static void build_model(ui_model_t *m)
     m->menu_index     = g_state.menu_index;
     ntc_type          = g_state.cfg.ntc_type;
     fan_speed         = g_state.cfg.fan_speed;
+    occ_source        = g_state.cfg.occ_source;
+    occ_home_pref     = g_state.cfg.occ_manual_home;
     app_unlock();
 
     /* Matter setup payload — available whether or not we're commissioned, so
@@ -385,12 +431,19 @@ static void build_model(ui_model_t *m)
     if (s_code[0] == '\0') strncpy(s_code, "----", sizeof(s_code));
     m->pairing_code = s_code;
 
-    /* Settings-menu lines (LABEL: VALUE). */
+    /* Settings-menu lines (LABEL: VALUE). PRESENCE shows the live resolved state
+     * (in sensor mode) or the manual preference (in manual mode). */
     snprintf(s_menu_fan,    sizeof(s_menu_fan),    "FAN: %s", fan_speed_name(fan_speed));
+    snprintf(s_menu_presence, sizeof(s_menu_presence), "PRESENCE: %s",
+             (occ_source == OCC_SRC_SENSOR ? m->occupied : occ_home_pref) ? "HOME" : "AWAY");
+    snprintf(s_menu_occsrc, sizeof(s_menu_occsrc), "OCC SRC: %s",
+             occ_source == OCC_SRC_SENSOR ? "SENSOR" : "MANUAL");
     snprintf(s_menu_units,  sizeof(s_menu_units),  "UNITS: %s", m->fahrenheit ? "F" : "C");
     snprintf(s_menu_sensor, sizeof(s_menu_sensor), "SENSOR: TYPE %d",
              ntc_type == NTC_TYPE_2 ? 2 : 3);
     s_menu_lines[MENU_FAN]         = s_menu_fan;
+    s_menu_lines[MENU_PRESENCE]    = s_menu_presence;
+    s_menu_lines[MENU_OCC_SRC]     = s_menu_occsrc;
     s_menu_lines[MENU_UNITS]       = s_menu_units;
     s_menu_lines[MENU_SENSOR]      = s_menu_sensor;
     s_menu_lines[MENU_MATTER_CODE] = "MATTER CODE >";

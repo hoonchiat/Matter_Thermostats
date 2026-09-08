@@ -31,7 +31,14 @@ typedef struct {
     int  hp_reversing;      /* thermo_hp_mode_t                  */
     int  brightness;        /* 0..255                            */
     int  fan_speed;         /* thermo_fan_speed_t: 0=auto,1=low,2=med,3=high */
+    int  occ_source;        /* occ_source_t: 0=manual, 1=sensor  */
+    bool occ_manual_home;   /* manual Home(true)/Away(false) pref */
+    int  away_heat_c10;     /* Away heating setback (0.1 C)       */
+    int  away_cool_c10;     /* Away cooling setback (0.1 C)       */
 } app_config_t;
+
+/* Occupancy source. */
+typedef enum { OCC_SRC_MANUAL = 0, OCC_SRC_SENSOR = 1 } occ_source_t;
 
 /* ---- live application state (single source of truth) ---------------------- */
 typedef struct {
@@ -43,6 +50,7 @@ typedef struct {
     bool calling_heat;
     bool calling_cool;
     bool fan_on;
+    bool occupied;          /* resolved live Home(true)/Away(false) */
 
     bool commissioned;      /* Matter commissioned onto a fabric */
     int  thread_rssi;
@@ -96,6 +104,7 @@ void app_matter_report_setpoints(int heat_c100, int cool_c100);
 void app_matter_report_mode(int mode);
 void app_matter_report_units(bool fahrenheit);   /* TemperatureDisplayMode */
 void app_matter_report_fan(int fan_speed);       /* Fan Control FanMode */
+void app_matter_report_occupancy(bool occupied); /* Occupancy Sensing */
 void app_matter_factory_reset(void);
 void app_matter_get_pairing_code(char *out, int out_len);
 

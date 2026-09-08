@@ -46,6 +46,7 @@ The ESP32-C6 GPIO matrix is flexible; the assignment below avoids the **strappin
 | **Relay G** (fan enable) | GPIO20 | GPIO | OUT | Active-high; any fan speed > 0 |
 | **Relay O·B** (reversing valve) | GPIO21 | GPIO | OUT | Heat-pump only |
 | **Fan taps** G_LOW/MED/HIGH (opt.) | −1 | GPIO | OUT | Multi-speed blower; one-hot; disabled (−1) by default |
+| **Occupancy / PIR** (opt.) | −1 | GPIO | IN | Motion input; disabled (−1) = manual Home/Away only |
 | **Status RGB LED** | GPIO8* | RMT (WS2812) | OUT | On-board on DevKitC-1 (strapping — LED only) |
 | **Factory-reset button** | GPIO9* | GPIO | IN | Re-uses BOOT (strapping, pulled-up) |
 | **Console UART TX/RX** | GPIO16/17 | UART0 | — | Debug/log; keep free |
@@ -178,6 +179,11 @@ Self-heating is negligible: with `R_fix` = 10 kΩ the NTC dissipates ≲ 0.3 mW.
 - **Encoder switch (SW)** and **push button:** momentary, active-low with internal
   pull-ups; debounced in firmware (`components/button`) with short/long-press detection.
 - **BOOT/reset button:** doubles as the factory-reset input (long-press).
+- **Occupancy / PIR sensor (optional):** a digital motion output (e.g. HC-SR501, AM312, or
+  a PIR module) on `CONFIG_THERMO_PIN_OCCUPANCY`. Active-high by default (idle low, high on
+  motion); the firmware enables the opposite internal pull so an unconnected pin reads "no
+  motion". Powered from 3.3 V (AM312) or 5 V (HC-SR501 — level-check the output). Leave the
+  pin at −1 to use only the manual Home/Away toggle.
 
 ## 6. Outputs (HVAC)
 

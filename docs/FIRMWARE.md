@@ -21,7 +21,8 @@ firmware/
     ├── rotary_encoder/       # PCNT quadrature + switch          [implemented]
     ├── button/               # debounce + short/long press       [implemented]
     ├── thermostat_core/      # mode/hysteresis/cycle-timer law    [implemented, pure]
-    ├── relays/               # 4-ch HVAC output driver           [implemented]
+    ├── relays/               # HVAC output driver + fan taps      [implemented]
+    ├── occupancy/            # PIR + vacancy timeout / Home-Away  [implemented]
     └── ui_oled/              # SSD1306 screens + 5x7 font + menu   [implemented]
 ```
 
@@ -107,6 +108,12 @@ OFF mode: fan_level = fixed speed (0 if AUTO);  FAN_ONLY: fixed speed or call sp
 from `fan_level` for a multi-speed blower.
 Reversing valve (O·B): heat-pump config maps a cool call → O (or heat call → B).
 
+Occupancy (Home/Away): before the control step, `control_task` resolves occupancy —
+`occupancy_poll()` (PIR + vacancy timeout) when the source is Sensor and one is wired,
+else the manual toggle. When Away it feeds **effective** setpoints (`heat − away_heat`,
+`cool + away_cool`, clamped) into the core; the stored/Matter setpoints are untouched. The
+resolved state is published via the Occupancy Sensing endpoint.
+
 ### 3.2 Compressor / cycle protection (safety, NFR-4)
 
 Applied *after* the hysteresis decision, as a gate:
@@ -177,7 +184,8 @@ Fault). See [UI.md](UI.md).
 
 `app_matter.cpp` creates the endpoints/clusters and registers callbacks:
 
-- **Endpoints:** Root (0), Thermostat 0x0301 (1), and Fan 0x002B (2, Fan Control cluster).
+- **Endpoints:** Root (0), Thermostat 0x0301 (1), Fan 0x002B (2, Fan Control), and
+  Occupancy Sensor 0x0107 (3, Occupancy Sensing).
 - **Attribute update callback** (remote write, `PRE_UPDATE`): translate `SystemMode`,
   `OccupiedHeatingSetpoint`, `OccupiedCoolingSetpoint`, `TemperatureDisplayMode`, and
   `FanControl::FanMode`/`PercentSetting` writes → `app_event`s → update `app_state` →
@@ -224,10 +232,11 @@ OTA A/B + NVS). See `firmware/sdkconfig.defaults` and `firmware/sdkconfig.defaul
 
 ## 8. Testing strategy
 
-- **Host unit tests** for `thermistor` (R→T against known points) and `thermostat_core`
+- **Host unit tests** for `thermistor` (R→T against known points), `thermostat_core`
   (hysteresis boundaries, min-off/min-on gating, auto dead-zone, fan-speed levels,
-  fail-safe). These components are pure C with no ESP dependency, so they compile and run on
-  a PC: `cd firmware/test/host && make`.
+  fail-safe), and `occupancy` (vacancy-timeout boundaries, clock-anomaly fail-safe). These
+  components are pure C with no ESP dependency, so they compile and run on a PC:
+  `cd firmware/test/host && make`.
 - **Host UI preview:** `make preview` renders every OLED screen to the terminal as ASCII
   (the `ui_oled` drawing path compiles under `UI_OLED_HOST`), so layouts are verifiable
   without hardware.
