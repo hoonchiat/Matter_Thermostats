@@ -235,6 +235,35 @@ device joins multiple fabrics simultaneously.
 
 ---
 
+## 5a. Thread mesh & range extension
+
+Thread is a self-healing **802.15.4 mesh**, so coverage grows with the number of
+mains-powered nodes rather than being limited to a single radio hop.
+
+- **Roles.** A **Full Thread Device (FTD)** that is mains-powered joins as a
+  Router-Eligible End Device (**REED**) and is promoted by the network **Leader** to an
+  active **Router**. Routers forward packets for their neighbors — that relaying is what
+  extends range and lets the mesh re-route around a node that drops. Battery **Sleepy End
+  Devices (SED/MED)** attach to a parent and do **not** route, so they don't extend range.
+- **This device is a range extender.** It is mains-powered (C-wire / 24 VAC→5 V, always
+  on — never sleepy) and is built as an FTD (`CONFIG_OPENTHREAD_FTD=y`), so once joined it
+  is router-eligible and, when promoted, relays for other Thread devices. Each installed
+  thermostat effectively becomes a repeater for nearby Thread nodes.
+- **What you still need.** A **Thread Border Router** bridges the mesh to your LAN (see the
+  prerequisite in §5); the mesh itself is formed by the routers. Range is meaningfully
+  extended when there are **several** routers — one thermostat plus one Border Router is a
+  single hop.
+- **Limits.** Thread caps a network at **32 active routers** (the Leader manages REED
+  promotion/demotion automatically); a device may belong to multiple fabrics but is on one
+  Thread network at a time.
+
+> To keep the device a router, do **not** build it as a Minimal Thread Device
+> (`CONFIG_OPENTHREAD_MTD`) or enable sleepy-end-device / low-power sleep on the 802.15.4
+> radio — those trade routing (and thus range extension) for battery life, which this
+> mains-powered design does not need.
+
+---
+
 ## 6. Local ↔ Matter synchronization rules
 
 Everything the user can change locally can also be **overridden from Matter**, and vice

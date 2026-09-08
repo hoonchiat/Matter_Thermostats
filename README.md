@@ -29,7 +29,7 @@ cloud, no vendor lock-in, all local control over a Thread mesh.
 | | |
 |---|---|
 | **MCU** | ESP32-C6 (RISC-V, native 802.15.4 for Thread, Wi-Fi 6, BLE 5) |
-| **Connectivity** | Matter 1.x over Thread; BLE for commissioning |
+| **Connectivity** | Matter 1.x over Thread (self-healing mesh; mains-powered → acts as a Thread **router**/range extender); BLE for commissioning |
 | **Device type** | Matter Thermostat (`0x0301`) |
 | **Temperature sensor** | 10 kΩ NTC, HVAC **Type 2** or **Type 3** curve (selectable), voltage-divider + ADC |
 | **Display** | 0.96″ (nom. "0.95″") **SSD1306** 128×64 monochrome OLED, I²C |
