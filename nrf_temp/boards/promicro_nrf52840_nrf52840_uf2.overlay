@@ -1,0 +1,67 @@
+/*
+ * Application devicetree overlay for the Pro Micro / SuperMini nRF52840
+ * temperature sensor.
+ *
+ *  - button0  : external momentary push-button, wired P0.06 <-> GND.
+ *               Used by the shared board module for the hold-to-factory-reset
+ *               / re-pair gesture (active-low, internal pull-up).
+ *  - led0     : the on-board LED on P0.15 (defined by the board) is the Matter
+ *               status / pairing-mode indicator.
+ *  - therm    : 10K Type-3 NTC in a divider, sampled on AIN2 (P0.04).
+ *  - therm_pwr: P1.11 powers the top of the divider; the firmware drives it
+ *               HIGH only while sampling, so the divider draws ~0 between
+ *               readings (battery life).
+ *
+ * Divider wiring (P1.11 -> NTC -> node -> Rfixed -> GND):
+ *     P1.11 (THERM_PWR) --[ 10K NTC ]--+--[ 10K fixed ]-- GND
+ *                                      |
+ *                                   P0.04 (AIN2)
+ * so V(node) rises with temperature (NTC falls as it warms).
+ */
+
+#include <zephyr/dt-bindings/adc/nrf-saadc.h>
+#include <zephyr/dt-bindings/input/input-event-codes.h>
+
+/ {
+	buttons {
+		compatible = "gpio-keys";
+
+		button0: button_0 {
+			gpios = <&gpio0 6 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+			label = "Function Button";
+			zephyr,code = <INPUT_KEY_0>;
+		};
+	};
+
+	zephyr,user {
+		io-channels = <&adc 2>;
+		/* Firmware drives this HIGH only while sampling the divider. */
+		therm-pwr-gpios = <&gpio1 11 GPIO_ACTIVE_HIGH>;
+	};
+
+	aliases {
+		sw0 = &button0;
+		mcuboot-button0 = &button0;
+	};
+};
+
+&adc {
+	status = "okay";
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	/*
+	 * AIN2 == P0.04, the divider midpoint. Ratiometric against VDD:
+	 * reference = VDD/4, gain 1/4  ->  full-scale = VDD, so raw/4095 is the
+	 * divider ratio V(node)/VDD directly, independent of the battery voltage.
+	 */
+	channel@2 {
+		reg = <2>;
+		zephyr,gain = "ADC_GAIN_1_4";
+		zephyr,reference = "ADC_REF_VDD_1_4";
+		zephyr,acquisition-time = <ADC_ACQ_TIME(ADC_ACQ_TIME_MICROSECONDS, 40)>;
+		zephyr,input-positive = <NRF_SAADC_AIN2>;
+		zephyr,resolution = <12>;
+		zephyr,oversampling = <4>;
+	};
+};

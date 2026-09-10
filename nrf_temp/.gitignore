@@ -1,0 +1,14 @@
+# Zephyr / NCS build output
+/build/
+build*/
+# (the released UF2 at the repo root is kept; build artifacts are not)
+/build/**/*.uf2
+*.hex
+*.bin
+*.elf
+*.map
+
+# Editor / OS
+.vscode/
+*.swp
+Thumbs.db

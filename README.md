@@ -1,7 +1,8 @@
 # Matter Home Automation
 
-ESP32 Matter projects (ESP-IDF v5.4.4 + the managed `espressif/esp_matter`
-component). Each folder is a standalone ESP-IDF project.
+Matter home-automation projects. The ESP32 folders are standalone ESP-IDF v5.4.4
+projects (managed `espressif/esp_matter` component); `nrf_temp/` is a Nordic
+nRF Connect SDK (Zephyr) project.
 
 | Folder | Board | What it is |
 |---|---|---|
@@ -9,7 +10,8 @@ component). Each folder is a standalone ESP-IDF project.
 | `gateway-portal/` | ESP32-S3 | Web control panel (Wi-Fi + WebSocket) bridged to the hub over USB-host CDC. |
 | `rgb-light/` | ESP32-C6 | Matter Extended Color Light accessory (WS2812) - on/off, brightness, RGB; hold-BOOT-15 s factory reset. |
 | `button/` | ESP32-C6 | Matter Generic Switch accessory - single / double / long press, RGB feedback; hold-BOOT-15 s factory reset. |
-| `flash-tool/` | — | Self-contained browser (Web Serial) flasher with all four firmwares embedded; no toolchain needed. |
+| `nrf_temp/` | nRF52840 SuperMini | Matter Temperature Sensor (10K Type-3 NTC on the SAADC) over Thread; battery **Sleepy End Device**; UF2 flashing; hold-15 s reset-to-pair. NCS/Zephyr, not ESP-IDF. |
+| `flash-tool/` | — | Self-contained browser (Web Serial) flasher with all four ESP32 firmwares embedded; no toolchain needed. |
 | `provisioning-tool/` | — | Browser provisioning station — writes a unique discriminator/passcode/serial into each Light/Button's `fctry` partition, keeps a device database, and prints a Matter QR label. |
 
 The two accessories share a **hold-BOOT-15 s reset-to-pair gesture**: hold the BOOT
@@ -35,3 +37,7 @@ checkout of a subproject:
 
 (`ESP_MATTER_PATH` must point at an esp-matter checkout for the C6 accessory
 projects.)
+
+`nrf_temp/` uses the Nordic nRF Connect SDK (Zephyr) instead — build it with
+`west` and flash the resulting `.uf2` by drag-and-drop (a prebuilt UF2 is
+included). See [nrf_temp/README.md](nrf_temp/README.md).
