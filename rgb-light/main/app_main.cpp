@@ -21,8 +21,14 @@
 
 #include <app_priv.h>
 #include "provisioning.h"
+#include "occupancy.h"
 #if CHIP_DEVICE_CONFIG_ENABLE_THREAD
 #include <platform/ESP32/OpenthreadLauncher.h>
+#include "esp_openthread.h"
+#include "esp_openthread_lock.h"
+#include <openthread/instance.h>
+#include <openthread/thread.h>
+#include <openthread/thread_ftd.h>
 #endif
 
 #include <app/server/CommissioningWindowManager.h>
@@ -141,6 +147,45 @@ static void app_event_cb(const ChipDeviceEvent *event, intptr_t arg)
     }
 }
 
+#if CHIP_DEVICE_CONFIG_ENABLE_THREAD
+/* Mesh support: this is a mains-powered light, so make it a full Thread ROUTER that
+ * routes for other nodes and extends the mesh (range + redundancy), instead of sitting
+ * as a leaf REED. An FTD is router-eligible but only auto-promotes after a jitter and
+ * only if the leader decides it's needed; here we request Router explicitly on attach. */
+static void ot_mesh_state_cb(otChangedFlags flags, void *ctx)
+{
+    if (!(flags & OT_CHANGED_THREAD_ROLE)) return;
+    otInstance *inst = esp_openthread_get_instance();
+    if (!inst) return;
+    switch (otThreadGetDeviceRole(inst)) {
+    case OT_DEVICE_ROLE_CHILD: {                 /* attached as a REED child - ask to be a Router */
+        otError e = otThreadBecomeRouter(inst);  /* (runs in the OT task; lock already held) */
+        ESP_LOGI(TAG, "mesh: attached as child -> requesting Router role (err %d)", e);
+        break;
+    }
+    case OT_DEVICE_ROLE_ROUTER: ESP_LOGI(TAG, "mesh: promoted to Thread ROUTER (extending the mesh)"); break;
+    case OT_DEVICE_ROLE_LEADER: ESP_LOGI(TAG, "mesh: now Thread LEADER"); break;
+    default: break;
+    }
+}
+
+static void mesh_router_enable(void)
+{
+    esp_openthread_lock_acquire(portMAX_DELAY);
+    otInstance *inst = esp_openthread_get_instance();
+    if (inst) {
+        otThreadSetRouterEligible(inst, true);                        /* be a router candidate */
+        otSetStateChangedCallback(inst, ot_mesh_state_cb, nullptr);   /* promote on every attach */
+        if (otThreadGetDeviceRole(inst) == OT_DEVICE_ROLE_CHILD)      /* already a child? promote now */
+            otThreadBecomeRouter(inst);
+        ESP_LOGI(TAG, "mesh: Thread router role enabled (FTD, router-eligible)");
+    } else {
+        ESP_LOGW(TAG, "mesh: OpenThread instance not ready; router role not set");
+    }
+    esp_openthread_lock_release();
+}
+#endif // CHIP_DEVICE_CONFIG_ENABLE_THREAD
+
 // This callback is invoked when clients interact with the Identify Cluster.
 // In the callback implementation, an endpoint can identify itself. (e.g., by flashing an LED or light).
 static esp_err_t app_identification_cb(identification::callback_type_t type, uint16_t endpoint_id, uint8_t effect_id,
@@ -157,6 +202,11 @@ static esp_err_t app_attribute_update_cb(attribute::callback_type_t type, uint16
                                          uint32_t attribute_id, esp_matter_attr_val_t *val, void *priv_data)
 {
     esp_err_t err = ESP_OK;
+
+    /* Hub configuring the occupancy auto-off period (custom attr on OnOff). */
+    if (type == PRE_UPDATE && cluster_id == OnOff::Id && attribute_id == OCC_TIMEOUT_ATTR_ID && val) {
+        occupancy_set_timeout_min(val->val.u16);
+    }
 
     if (type == PRE_UPDATE) {
         /* Driver update */
@@ -237,6 +287,16 @@ extern "C" void app_main()
         ESP_LOGE(TAG, "ColorControl cluster missing; HueSaturation feature not added");
     }
 
+    /* Occupancy auto-off period (minutes): a custom manufacturer attribute on the
+     * OnOff cluster that the hub writes to configure the local timeout (default 10).
+     * Writable + persisted; the light's occupancy logic (occupancy.cpp) uses it. */
+    cluster_t *onoff_cluster = cluster::get(endpoint, OnOff::Id);
+    if (onoff_cluster) {
+        attribute::create(onoff_cluster, OCC_TIMEOUT_ATTR_ID,
+                          ATTRIBUTE_FLAG_WRITABLE | ATTRIBUTE_FLAG_NONVOLATILE,
+                          esp_matter_uint16(10));
+    }
+
     /* Mark deferred persistence for some attributes that might be changed rapidly */
     attribute_t *current_level_attribute = attribute::get(light_endpoint_id, LevelControl::Id, LevelControl::Attributes::CurrentLevel::Id);
     attribute::set_deferred_persistence(current_level_attribute);
@@ -282,6 +342,16 @@ extern "C" void app_main()
 
     /* Starting driver with default values */
     app_driver_light_set_defaults(light_endpoint_id);
+
+#if CHIP_DEVICE_CONFIG_ENABLE_THREAD
+    /* Mesh: act as a Thread Router so this mains light extends the mesh. */
+    mesh_router_enable();
+#endif
+
+    /* Occupancy auto-off: a PIR on OCC_PIN turns the light off after no presence
+     * for the configured period (hub-settable, default 10 min). Self-contained;
+     * no sensor wired -> input pulled high -> never auto-offs (normal light). */
+    occupancy_start(light_endpoint_id);
 
 #if CONFIG_ENABLE_ENCRYPTED_OTA
     err = esp_matter_ota_requestor_encrypted_init(s_decryption_key, s_decryption_key_len);

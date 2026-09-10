@@ -63,7 +63,7 @@ CONFIG_CHIP_PROJECT_CONFIG="main/CHIPProjectConfig.h"
 
 # SoftwareVersionString = app version = 0.99 (esp-matter reports the ESP-IDF app version)
 CONFIG_APP_PROJECT_VER_FROM_CONFIG=y
-CONFIG_APP_PROJECT_VER="0.99"
+CONFIG_APP_PROJECT_VER="2.0.0"
 
 # Per-device provisioning: custom CommissionableDataProvider (main/provisioning.cpp)
 # reads discriminator/passcode/serial from the `fctry` partition (written by the HTML
