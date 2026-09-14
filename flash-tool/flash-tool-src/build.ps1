@@ -34,12 +34,15 @@ $bnbl = B64 'C:\mhbutton\build\bootloader\bootloader.bin'
 $bnpt = B64 'C:\mhbutton\build\partition_table\partition-table.bin'
 $bnot = B64 'C:\mhbutton\build\ota_data_initial.bin'
 $bnap = B64 'C:\mhbutton\build\button.bin'
+# nrf_temp (nRF52840 SuperMini): a UF2 image, flashed by drag-drop (not esptool).
+$nrfuf2 = B64 'C:\mhtemp\nrf_temp-nrf52840-supermini.uf2'
 
 # --dirty flags a build with uncommitted changes (the embedded .bin is newer than the commit)
 try { $c6ver = (git -C C:\mho      describe --always --dirty).Trim() } catch { $c6ver = 'local' }
 try { $s3ver = (git -C C:\mhs3     describe --always --dirty).Trim() } catch { $s3ver = 'local' }
 try { $ltver = (git -C C:\mhlight  describe --always --dirty).Trim() } catch { $ltver = 'local' }
 try { $bnver = (git -C C:\mhbutton describe --always --dirty).Trim() } catch { $bnver = 'local' }
+try { $nrfver = (git -C C:\Matter  rev-parse --short HEAD).Trim() } catch { $nrfver = 'local' }
 
 $sb = New-Object System.Text.StringBuilder
 [void]$sb.Append('window.FW={')
@@ -50,7 +53,9 @@ $sb = New-Object System.Text.StringBuilder
 [void]$sb.Append('light:{chip:"ESP32-C6",label:"RGB Light \u2014 C6",desc:"Matter Extended Color Light accessory - RGB + brightness (build ' + $ltver + ')",parts:[')
 [void]$sb.Append('{addr:0,b64:"' + $ltbl + '"},{addr:49152,b64:"' + $ltpt + '"},{addr:118784,b64:"' + $ltot + '"},{addr:131072,b64:"' + $ltap + '"}]},')
 [void]$sb.Append('button:{chip:"ESP32-C6",label:"Button \u2014 C6",desc:"Matter Generic Switch accessory - single/double/long press (build ' + $bnver + ')",parts:[')
-[void]$sb.Append('{addr:0,b64:"' + $bnbl + '"},{addr:49152,b64:"' + $bnpt + '"},{addr:118784,b64:"' + $bnot + '"},{addr:131072,b64:"' + $bnap + '"}]}')
+[void]$sb.Append('{addr:0,b64:"' + $bnbl + '"},{addr:49152,b64:"' + $bnpt + '"},{addr:118784,b64:"' + $bnot + '"},{addr:131072,b64:"' + $bnap + '"}]},')
+# nRF52840 SuperMini temperature sensor: UF2 (drag-drop), no serial flashing.
+[void]$sb.Append('nrf_temp:{chip:"nRF52840",uf2:true,label:"Temp Sensor \u2014 nRF52840",desc:"Matter temperature sensor over Thread - 10K Type-3 NTC, battery SED (build ' + $nrfver + ')",uf2name:"nrf_temp-nrf52840-supermini.uf2",uf2b64:"' + $nrfuf2 + '"}')
 [void]$sb.Append('};')
 $fw = $sb.ToString()
 
@@ -59,4 +64,4 @@ $tpl = $tpl.Replace('/*__ESPTOOL__*/', $esptool).Replace('/*__FW__*/', $fw)
 
 [IO.File]::WriteAllText($out, $tpl, (New-Object System.Text.UTF8Encoding($false)))
 $fi = Get-Item $out
-Write-Output ("OK  {0}  ({1:N2} MB)  hub={2} s3={3} light={4} button={5}" -f $fi.FullName, ($fi.Length/1MB), $c6ver, $s3ver, $ltver, $bnver)
+Write-Output ("OK  {0}  ({1:N2} MB)  hub={2} s3={3} light={4} button={5} nrf_temp={6}" -f $fi.FullName, ($fi.Length/1MB), $c6ver, $s3ver, $ltver, $bnver, $nrfver)

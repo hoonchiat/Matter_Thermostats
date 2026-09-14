@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ESP32 Firmware Flasher — Matter Hub, Portal, Light &amp; Button</title>
+<title>Matter Firmware Flasher — Hub, Portal, Light, Button &amp; Temp Sensor</title>
 <style>
   :root{--bg:#0f1420;--card:#1a2233;--card2:#141b29;--line:#2b3650;--fg:#e6ecf5;--mut:#8fa0bd;--acc:#4ea1ff;--on:#37d67a;--bad:#ff6b6b;--warn:#ffcf5c;--rad:12px}
   *{box-sizing:border-box}
@@ -38,8 +38,8 @@
 </head>
 <body>
 <div class="wrap">
-  <h1>ESP32 Firmware Flasher</h1>
-  <div class="sub">Flashes any of the project firmwares — <b>Matter Hub</b> (C6), <b>Gateway Portal</b> (S3), <b>RGB Light</b> (C6) and <b>Button</b> (C6) — over USB, straight from your browser. Firmware is embedded in this file — no downloads, works offline.</div>
+  <h1>Matter Firmware Flasher</h1>
+  <div class="sub">Flashes any of the project firmwares — <b>Matter Hub</b> (C6), <b>Gateway Portal</b> (S3), <b>RGB Light</b> (C6), <b>Button</b> (C6) over USB serial, plus the <b>Temp Sensor</b> (nRF52840) by UF2 drag-drop — straight from your browser. Firmware is embedded in this file — works offline.</div>
 
   <div class="note info" style="margin-top:14px">Giving a <b>Light</b> or <b>Button</b> a <b>unique commissioning identity + a printable QR label</b>? Use <a href="provisioning-tool.html">provisioning-tool.html</a> instead — this flasher writes the same firmware (shared test identity) to every unit.</div>
 
@@ -50,7 +50,7 @@
     <div class="fw" id="fwsel"></div>
   </div>
 
-  <div class="card">
+  <div class="card" id="serialCard2">
     <div class="step">2 · Connect &amp; verify chip</div>
     <div class="sub">Plug the board into USB, click connect, and pick its serial port. I'll read the chip and confirm it matches your choice.</div>
     <div class="row" style="margin-top:12px">
@@ -60,7 +60,7 @@
     <div class="status" id="connStatus"></div>
   </div>
 
-  <div class="card">
+  <div class="card" id="serialCard3">
     <div class="step">3 · Erase &amp; flash</div>
     <div class="sub">Full-chip erase, then writes the selected firmware. <b>Don't unplug</b> until it says done.</div>
     <div class="row" style="margin-top:12px">
@@ -71,7 +71,21 @@
     <pre class="log hide" id="log"></pre>
   </div>
 
-  <div class="note info">Tip: a factory-fresh ESP32-C6/S3 connects over its built-in USB (it shows up as a COM port). If the board doesn't respond, hold its <b>BOOT</b> button while connecting, then release.</div>
+  <div class="card hide" id="uf2Card">
+    <div class="step">2 · Flash by UF2 (drag &amp; drop)</div>
+    <div class="sub">The nRF52840 flashes over USB mass-storage, not serial, so the browser can't write it directly — two quick steps:</div>
+    <ol style="margin:12px 0 0;padding-left:20px;line-height:1.75">
+      <li><b>Double-tap the RESET button</b> on the board — it mounts as a USB drive (e.g. <code>NRF52BOOT</code>).</li>
+      <li>Click <b>Download .uf2</b>, then <b>drag the file onto that drive</b>. The board flashes and reboots into the app.</li>
+    </ol>
+    <div class="row" style="margin-top:14px">
+      <button class="act" id="uf2Btn">Download .uf2</button>
+    </div>
+    <div class="status" id="uf2Status"></div>
+    <div class="note warn" style="margin-top:14px">Needs the <b>Adafruit nRF52 UF2 bootloader</b> (most SuperMini / Pro-Micro boards ship with it). Pairs with Matter setup code <b>20202021</b>, discriminator <b>3840</b>.</div>
+  </div>
+
+  <div class="note info" id="tipNote">Tip: a factory-fresh ESP32-C6/S3 connects over its built-in USB (it shows up as a COM port). If the board doesn't respond, hold its <b>BOOT</b> button while connecting, then release.</div>
 </div>
 
 <script>/*__ESPTOOL__*/</script>
@@ -89,16 +103,43 @@
 
   // ---------- firmware selector ----------
   const b64bytes = b64 => Math.floor(b64.length * 3 / 4);
-  const fwSize = f => (f.parts.reduce((a,p)=>a+b64bytes(p.b64),0)/1048576).toFixed(2) + ' MB';
+  const fwSize = f => ((f.uf2 ? b64bytes(f.uf2b64) : f.parts.reduce((a,p)=>a+b64bytes(p.b64),0))/1048576).toFixed(2) + ' MB';
   function renderFw(){
     $('#fwsel').innerHTML = Object.entries(FW).map(([k,f])=>`
       <button class="fwb ${k===chosen?'sel':''}" data-k="${k}" ${busy?'disabled':''}>
         <b>${f.label}</b>
         <div class="d">${f.desc||''}</div>
-        <span class="chip">${f.chip}</span> &nbsp;<span class="d" style="display:inline">${fwSize(f)}</span>
+        <span class="chip">${f.chip}</span> &nbsp;<span class="d" style="display:inline">${fwSize(f)}${f.uf2?' · UF2':''}</span>
       </button>`).join('');
-    $('#fwsel').querySelectorAll('.fwb').forEach(b=>b.onclick=()=>{ if(busy) return; chosen=b.dataset.k; renderFw(); revalidate(); });
+    $('#fwsel').querySelectorAll('.fwb').forEach(b=>b.onclick=()=>{ if(busy) return; chosen=b.dataset.k; renderFw(); applyMode(); revalidate(); });
+    applyMode();
   }
+
+  // ---------- serial (ESP32) vs UF2 (nRF52840) mode ----------
+  function applyMode(){
+    const isUf2 = !!(FW[chosen] && FW[chosen].uf2);
+    $('#serialCard2').classList.toggle('hide', isUf2);
+    $('#serialCard3').classList.toggle('hide', isUf2);
+    $('#tipNote').classList.toggle('hide', isUf2);
+    $('#uf2Card').classList.toggle('hide', !isUf2);
+    // the "Web Serial unavailable" banner is irrelevant for UF2 flashing
+    $('#unsupported').classList.toggle('hide', isUf2 || supported);
+  }
+
+  $('#uf2Btn').onclick = () => {
+    const f = FW[chosen];
+    if(!f || !f.uf2) return;
+    const bin = atob(f.uf2b64);
+    const bytes = new Uint8Array(bin.length);
+    for(let i=0;i<bin.length;i++) bytes[i] = bin.charCodeAt(i);
+    const url = URL.createObjectURL(new Blob([bytes], {type:'application/octet-stream'}));
+    const a = document.createElement('a');
+    a.href = url; a.download = f.uf2name || 'firmware.uf2';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url), 4000);
+    $('#uf2Status').className = 'status ok';
+    $('#uf2Status').innerHTML = 'Downloaded <b>' + (f.uf2name || 'firmware.uf2') + '</b> — now drag it onto the board\'s USB drive.';
+  };
 
   // ---------- log / status / progress ----------
   const logEl = $('#log');

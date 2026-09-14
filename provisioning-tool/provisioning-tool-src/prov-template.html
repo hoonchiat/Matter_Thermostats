@@ -43,7 +43,7 @@
 <body>
 <div class="wrap">
   <h1>Matter Provisioning Station</h1>
-  <div class="sub">Flashes a <b>unique commissioning identity</b> (discriminator + passcode + serial) into each ESP32-C6 <b>Light</b> or <b>Button</b>, keeps a device database, and prints a QR label. Firmware is embedded — works offline in desktop Chrome/Edge.</div>
+  <div class="sub">Gives each device a <b>unique commissioning identity</b> (discriminator + passcode + serial), keeps a device database, and prints a QR label. ESP32-C6 <b>Light</b>/<b>Button</b> are written over serial; the nRF52840 <b>Temp Sensor</b> gets a per-device <b>identity UF2</b> to drag on. Firmware embedded — works offline in desktop Chrome/Edge.</div>
 
   <div class="note info" style="margin-top:14px">Only the Light and Button carry a per-device identity. To flash the <b>Hub</b> or <b>Gateway Portal</b> (or plain-flash a Light/Button without changing its identity), use <a href="flash-tool.html">flash-tool.html</a> instead.</div>
 
@@ -72,7 +72,7 @@
     <div class="step">2 · Next device</div>
     <div class="grid">
       <label class="fld">Device type
-        <select id="devType"><option value="light">RGB Light (C6)</option><option value="button">Button (C6)</option></select>
+        <select id="devType"><option value="light">RGB Light (C6)</option><option value="button">Button (C6)</option><option value="nrf_temp">Temp Sensor (nRF52840)</option></select>
       </label>
       <label class="fld">Unit name (on the label)
         <input id="unitName" type="text">
@@ -96,8 +96,8 @@
     </div>
   </div>
 
-  <!-- 3 · CONNECT + FLASH -->
-  <div class="card">
+  <!-- 3 · CONNECT + FLASH (ESP32, serial) -->
+  <div class="card" id="serialCard">
     <div class="step">3 · Connect &amp; flash</div>
     <div class="row">
       <button id="connectBtn">Select port &amp; connect</button>
@@ -113,6 +113,22 @@
     <div class="bar hide" id="barWrap"><i id="bar"></i></div>
     <div class="status" id="flashStatus"></div>
     <pre class="log hide" id="log"></pre>
+  </div>
+
+  <!-- 3' · UF2 PROVISION (nRF52840) -->
+  <div class="card hide" id="uf2Card">
+    <div class="step">3 · Flash by UF2 (nRF52840)</div>
+    <div class="sub">The nRF52840 flashes over USB mass-storage. <b>Double-tap RESET</b> so the board mounts as a drive (e.g. <code>NRF52BOOT</code>), then drag these on:</div>
+    <ol style="margin:12px 0 0;padding-left:20px;line-height:1.9">
+      <li><b>App</b> — once per board:
+        <button id="uf2AppBtn" class="sec">Download app .uf2</button>
+      </li>
+      <li><b>This unit's identity</b> — writes the unique discriminator/passcode to the <code>factory</code> partition and saves the label:
+        <button id="uf2IdBtn">Generate identity .uf2 &amp; label</button>
+      </li>
+    </ol>
+    <div class="status" id="uf2Status"></div>
+    <div class="note info">A fresh board needs both (app first, then identity). To re-provision a board that already has the app, just drag a new identity UF2 — the app and its pairing are untouched.</div>
   </div>
 
   <!-- 4 · LABEL -->
@@ -139,12 +155,16 @@
 
   const FW = window.FW || {};
   const TYPES = {
-    light:  { vid:0xFFF1, pid:0x8000, serialPrefix:'PJL-A01-', unit:'PJoshua SmartBulb', chip:'ESP32-C6', fw:'light' },
-    button: { vid:0xFFF1, pid:0x8001, serialPrefix:'PJB-A01-', unit:'PJoshua Button',    chip:'ESP32-C6', fw:'button' },
+    light:    { vid:0xFFF1, pid:0x8000, serialPrefix:'PJL-A01-', unit:'PJoshua SmartBulb',  chip:'ESP32-C6', fw:'light',    factoryAddr:0x3e0000 },
+    button:   { vid:0xFFF1, pid:0x8001, serialPrefix:'PJB-A01-', unit:'PJoshua Button',     chip:'ESP32-C6', fw:'button',   factoryAddr:0x3e0000 },
+    // nRF52840: same on-device-verifier blob, written to the `factory` partition
+    // (0x0f3000) as a UF2 rather than over serial. Keeps VID/PID 0xFFF1/0x8000 so
+    // the built-in test DAC still matches.
+    nrf_temp: { vid:0xFFF1, pid:0x8000, serialPrefix:'PJT-A01-', unit:'PJoshua TempSensor', chip:'nRF52840', fw:'nrf_temp', factoryAddr:0x0f3000, uf2:true, familyID:0xADA52840 },
   };
-  const FCTRY_ADDR = 0x3e0000, PROV_MAGIC = 0x50524F56;
+  const PROV_MAGIC = 0x50524F56;
 
-  // ---------- partition blob ----------
+  // ---------- partition blob (identical layout for every device family) -------
   function buildFctry(disc, pass, serial){
     const buf = new Uint8Array(4096);           // zero-filled -> serial NUL-terminated
     const dv = new DataView(buf.buffer);
@@ -157,6 +177,29 @@
     return buf;
   }
   const bytesToBin = b => { let s=''; for(let i=0;i<b.length;i++) s+=String.fromCharCode(b[i]); return s; };
+
+  // ---------- UF2 wrapper (nRF52840) ----------
+  // Wrap a flash blob into UF2 blocks targeting `addr`. 256 payload bytes/block,
+  // familyID present. The Adafruit nRF52 bootloader erases each 4K page it touches.
+  function buildUF2(data, addr, familyID){
+    const M0=0x0A324655, M1=0x9E5D5157, MEND=0x0AB16F30, FLAG_FAMILY=0x00002000, PAY=256;
+    const n = Math.ceil(data.length / PAY);
+    const out = new Uint8Array(n * 512);
+    for(let i=0;i<n;i++){
+      const dv = new DataView(out.buffer, i*512, 512);
+      dv.setUint32(0,  M0, true);
+      dv.setUint32(4,  M1, true);
+      dv.setUint32(8,  FLAG_FAMILY, true);
+      dv.setUint32(12, (addr + i*PAY) >>> 0, true);
+      dv.setUint32(16, PAY, true);
+      dv.setUint32(20, i, true);
+      dv.setUint32(24, n, true);
+      dv.setUint32(28, familyID >>> 0, true);
+      out.set(data.subarray(i*PAY, i*PAY + PAY), i*512 + 32);
+      dv.setUint32(508, MEND, true);
+    }
+    return out;
+  }
 
   // ---------- Matter QR (MT:) ----------
   const B38 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-.";
@@ -210,6 +253,7 @@
     if(!$('#passcode').value) $('#passcode').value = genPass();
     $('#vidpid').textContent = `VID 0x${T.vid.toString(16).toUpperCase()} · PID 0x${T.pid.toString(16).toUpperCase()} · ${T.chip}`;
     updateQRPreview();
+    applyDeviceMode();
     revalidate();
   }
   function curDev(){
@@ -217,7 +261,8 @@
     const disc=Math.max(0,Math.min(4095, parseInt($('#disc').value||'0',10)));
     const pass=parseInt($('#passcode').value||'0',10);
     const serial=$('#serial').value, unit=$('#unitName').value||T.unit;
-    return {type, vid:T.vid, pid:T.pid, disc, pass, serial, unit, fw:T.fw,
+    return {type, vid:T.vid, pid:T.pid, disc, pass, serial, unit, fw:T.fw, chip:T.chip,
+            factoryAddr:T.factoryAddr, uf2:!!T.uf2, familyID:T.familyID,
             qr:matterQR(T.vid,T.pid,disc,pass), manual:manualCode(disc,pass)};
   }
   function updateQRPreview(){ const d=curDev(); $('#qrPreview').textContent = d.qr + '   ·   manual ' + groupManual(d.manual); }
@@ -253,6 +298,42 @@
   function downloadBlob(blob,name){ const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),6000); }
   function downloadLabel(dev){ renderLabel(dev, $('#labelPrev')); $('#labelPrev').toBlob(b=>{ lastLabel={blob:b,name:labelName(dev)}; downloadBlob(b, labelName(dev)); }, 'image/png'); }
   $('#relabelBtn').onclick = ()=>{ if(lastLabel) downloadBlob(lastLabel.blob, lastLabel.name); };
+
+  // ---------- shared: record in DB + label + advance counters ----------
+  function recordProvisioned(dev){
+    db.devices.push({type:dev.type,unit:dev.unit,serial:dev.serial,disc:dev.disc,pass:dev.pass,vid:dev.vid,pid:dev.pid,ts:new Date().toISOString()});
+    db.nextDisc = dev.disc+1;
+    persist(); renderDB();
+    downloadLabel(dev);
+  }
+  function resetForm(){ $('#unitName').dataset.touched=''; $('#unitName').value=''; $('#disc').dataset.touched=''; $('#disc').value=''; $('#passcode').value=''; refreshForm(); }
+
+  // ---------- nRF52840 UF2 provisioning (no serial) ----------
+  const setUf2 = (h,c='')=>{ $('#uf2Status').className='status '+c; $('#uf2Status').innerHTML=h; };
+  function applyDeviceMode(){
+    const isUf2 = !!TYPES[$('#devType').value].uf2;
+    $('#serialCard').classList.toggle('hide', isUf2);
+    $('#uf2Card').classList.toggle('hide', !isUf2);
+    $('#unsupported').classList.toggle('hide', isUf2 || supported);
+  }
+  $('#uf2AppBtn').onclick = ()=>{
+    const f = FW['nrf_temp'];
+    if(!f || !f.uf2){ setUf2('App firmware not embedded in this build.','err'); return; }
+    const bin = atob(f.uf2b64), bytes = new Uint8Array(bin.length);
+    for(let i=0;i<bin.length;i++) bytes[i] = bin.charCodeAt(i);
+    downloadBlob(new Blob([bytes],{type:'application/octet-stream'}), f.uf2name||'app.uf2');
+    setUf2('Downloaded the app UF2 — double-tap RESET, then drag it onto the board drive (once per board).','ok');
+  };
+  $('#uf2IdBtn').onclick = ()=>{
+    const dev = curDev();
+    if(!dev.pass || dev.pass<1){ setUf2('Passcode invalid — click "New passcode".','err'); return; }
+    if(db.devices.some(d=>d.disc===dev.disc)){ if(!confirm('Discriminator '+dev.disc+' is already in the database. Use it anyway?')) return; }
+    const uf2 = buildUF2(buildFctry(dev.disc, dev.pass, dev.serial), dev.factoryAddr, dev.familyID);
+    downloadBlob(new Blob([uf2],{type:'application/octet-stream'}), (dev.serial||'device')+'-identity.uf2');
+    recordProvisioned(dev);
+    setUf2(`Identity UF2 for <b>${esc(dev.serial)}</b> (disc ${dev.disc}, passcode ${fmtPass(dev.pass)}) downloaded + label saved — drag it onto the board drive.`,'ok');
+    resetForm();
+  };
 
   // ---------- esptool connect / flash ----------
   const logEl=$('#log');
@@ -305,7 +386,7 @@
     try{
       const fileArray=[];
       if(!provOnly) for(const p of fwparts) fileArray.push({data:atob(p.b64), address:p.addr});
-      fileArray.push({data:bytesToBin(buildFctry(dev.disc,dev.pass,dev.serial)), address:FCTRY_ADDR});
+      fileArray.push({data:bytesToBin(buildFctry(dev.disc,dev.pass,dev.serial)), address:dev.factoryAddr});
       const total=fileArray.reduce((a,x)=>a+x.data.length,0);
       setFlash((provOnly?'Writing provisioning partition…':'Erasing + writing firmware and provisioning…')); progress(2);
       await esploader.writeFlash({ fileArray, flashSize:'keep', flashMode:'keep', flashFreq:'keep',
@@ -314,15 +395,10 @@
       });
       progress(100);
       try{ await esploader.hardReset(); }catch(e){}
-      // record + label + advance
-      db.devices.push({type:dev.type,unit:dev.unit,serial:dev.serial,disc:dev.disc,pass:dev.pass,vid:dev.vid,pid:dev.pid,ts:new Date().toISOString()});
-      db.nextDisc = dev.disc+1;
-      persist(); renderDB();
-      downloadLabel(dev);
+      recordProvisioned(dev);
       setFlash(`Provisioned <b>${esc(dev.serial)}</b> — disc ${dev.disc}, passcode ${fmtPass(dev.pass)}. Label downloaded. <span class="ok">&#10003;</span>`,'ok');
       log('\n✓ '+dev.serial+' provisioned.');
-      // reset form for the next unit
-      $('#unitName').dataset.touched=''; $('#unitName').value=''; $('#disc').dataset.touched=''; $('#disc').value=''; $('#passcode').value=''; refreshForm();
+      resetForm();
     }catch(e){
       setFlash('Flash failed: '+(e&&e.message?e.message:e)+' — unplug/replug and retry.','err');
       log('\n✗ '+(e&&e.stack?e.stack:e));
@@ -350,7 +426,7 @@
   renderDB(); refreshForm();
 
   // Debug hook (harmless; local tool) - inspect the generators from the console.
-  window.provDebug = { curDev, buildFctry, matterQR, manualCode, renderLabel, base38, verhoeff, genPass };
+  window.provDebug = { curDev, buildFctry, buildUF2, matterQR, manualCode, renderLabel, base38, verhoeff, genPass };
 })();
 </script>
 </body>

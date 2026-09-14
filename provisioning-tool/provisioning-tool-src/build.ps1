@@ -28,11 +28,15 @@ $bnbl = B64 'C:\mhbutton\build\bootloader\bootloader.bin'
 $bnpt = B64 'C:\mhbutton\build\partition_table\partition-table.bin'
 $bnot = B64 'C:\mhbutton\build\ota_data_initial.bin'
 $bnap = B64 'C:\mhbutton\build\button.bin'
+# nrf_temp (nRF52840): the whole app is one UF2 (drag-drop). The per-device identity
+# UF2 is generated in-browser; only the shared app image is embedded here.
+$nrfuf2 = B64 'C:\mhtemp\nrf_temp-nrf52840-supermini.uf2'
 
 $sb = New-Object System.Text.StringBuilder
 [void]$sb.Append('window.FW={')
 [void]$sb.Append('light:{parts:[{addr:0,b64:"'  + $ltbl + '"},{addr:49152,b64:"'  + $ltpt + '"},{addr:118784,b64:"' + $ltot + '"},{addr:131072,b64:"' + $ltap + '"}]},')
-[void]$sb.Append('button:{parts:[{addr:0,b64:"' + $bnbl + '"},{addr:49152,b64:"' + $bnpt + '"},{addr:118784,b64:"' + $bnot + '"},{addr:131072,b64:"' + $bnap + '"}]}')
+[void]$sb.Append('button:{parts:[{addr:0,b64:"' + $bnbl + '"},{addr:49152,b64:"' + $bnpt + '"},{addr:118784,b64:"' + $bnot + '"},{addr:131072,b64:"' + $bnap + '"}]},')
+[void]$sb.Append('nrf_temp:{uf2:true,uf2name:"nrf_temp-nrf52840-supermini.uf2",uf2b64:"' + $nrfuf2 + '"}')
 [void]$sb.Append('};')
 $fw = $sb.ToString()
 

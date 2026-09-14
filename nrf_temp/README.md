@@ -16,8 +16,9 @@ Flashing is by **UF2** (drag-and-drop over USB) — no debugger needed.
   (hundredths of a degree Celsius).
 - **Transport:** Thread, **Sleepy End Device** (Matter ICD). Vendor 0xFFF1 /
   product 0x8000.
-- **Commissioning (test credentials):** setup code **20202021**, discriminator
-  **3840** (0xF00). Built-in test DAC — same dev setup as the ESP32 devices.
+- **Commissioning:** built-in test DAC. **Un-provisioned** units share the test
+  setup code **20202021** / discriminator **3840** (0xF00); each unit can be given a
+  **unique** code with the provisioning station (see *Per-device provisioning*).
 
 ## Wiring
 
@@ -82,6 +83,24 @@ is linked to `0x26000`, exactly where that bootloader loads it.
 > If the board has no UF2 bootloader yet, flash the Adafruit nRF52 bootloader once
 > with a debugger (or `west flash` over J-Link), then use UF2 thereafter.
 
+## Per-device provisioning (unique setup code)
+
+Out of the box every unit shares the test code `20202021`. To give each unit a
+**unique discriminator + passcode + serial** and a printable QR label, use the
+browser [provisioning station](../provisioning-tool) — the same tool that
+provisions the ESP32 Light/Button.
+
+`src/provisioning.cpp` registers a custom `CommissionableDataProvider` (via Matter's
+`mPreServerInitClbk`) that reads a 64-byte blob `{discriminator, passcode, serial}`
+from the **`factory` partition (`0x0f3000`)** and computes the SPAKE2+ verifier
+**on-device** — the same on-device-verifier scheme as the ESP32 devices, so the
+browser writes only three small values (no crypto). A blank partition falls back to
+the test defaults, so an un-provisioned board still boots and pairs.
+
+The station hands you a tiny **identity `.uf2`** (16 blocks targeting `0x0f3000`,
+independent of the app) to drag onto the board — so re-provisioning never touches the
+app or its pairing. Flash the app UF2 once, then drop each unit's identity UF2.
+
 ## Build
 
 Needs the NCS v2.9.3 toolchain set up in `C:\ncs` + `C:\nrf` (see the toolchain
@@ -118,11 +137,15 @@ UF2 flash layout, internal-RC 32 kHz clock).
 
 - `src/temperature_sensor.cpp` / `.h` — SAADC thermistor read (ratiometric,
   power-gated) + Type-3 conversion → TemperatureMeasurement.
-- `src/app_task.cpp` — Matter node bring-up; starts the sensor after the server.
+- `src/app_task.cpp` — Matter node bring-up; registers the provisioning provider
+  (pre-server-init) and starts the sensor after the server.
+- `src/provisioning.cpp` / `.h` — per-device provisioning: reads {discriminator,
+  passcode, serial} from the `factory` partition and computes the SPAKE2+ verifier
+  on-device (browser tool writes it as a UF2). Blank → test creds.
 - `src/default_zap/` — data model (root node + Temperature Sensor endpoint 1),
   generated from `template.zap`.
-- `boards/others/promicro_nrf52840/` — out-of-tree board (UF2 layout, USB-CDC
-  console, LED P0.15).
+- `boards/others/promicro_nrf52840/` — out-of-tree board (UF2 layout with the 4K
+  `factory` provisioning partition, USB-CDC console, LED P0.15).
 - `boards/promicro_nrf52840_nrf52840_uf2.overlay` — thermistor ADC + power gate +
   external button.
 - `prj.conf` / `Kconfig` / `sysbuild.conf` — Matter + Thread SED (MTD/ICD),

@@ -30,6 +30,7 @@ target_include_directories(app PRIVATE
 target_sources(app PRIVATE
     src/app_task.cpp
     src/main.cpp
+    src/provisioning.cpp
     src/temperature_sensor.cpp
 )
 

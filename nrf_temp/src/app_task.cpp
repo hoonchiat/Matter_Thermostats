@@ -5,6 +5,7 @@
  */
 
 #include "app_task.h"
+#include "provisioning.h"
 #include "temperature_sensor.h"
 
 #include "app/matter_init.h"
@@ -29,8 +30,13 @@ using namespace ::chip::DeviceLayer;
 
 CHIP_ERROR AppTask::Init()
 {
-	/* Initialize Matter stack */
-	ReturnErrorOnFailure(Nrf::Matter::PrepareServer());
+	/* Initialize Matter stack. The pre-server-init callback registers a custom
+	 * CommissionableDataProvider that pulls this unit's discriminator/passcode
+	 * from the `factory` partition (per-device provisioning), before Server::Init
+	 * reads them. Blank partition -> compiled-in test creds. */
+	Nrf::Matter::InitData initData;
+	initData.mPreServerInitClbk = ProvisioningPreServerInit;
+	ReturnErrorOnFailure(Nrf::Matter::PrepareServer(initData));
 
 	if (!Nrf::GetBoard().Init()) {
 		LOG_ERR("User interface initialization failed.");

@@ -10,7 +10,8 @@
  *   - 0x00000000..0x00026000 (152K) reserved (SoftDevice region the UF2
  *     bootloader expects; unused by Zephyr but the app MUST start at 0x26000).
  *   - 0x00026000 (796K) Application   -> code_partition (UF2 flashes here).
- *   - 0x000ed000 (28K)  storage       -> Matter settings (NVS).
+ *   - 0x000ed000 (24K)  storage       -> Matter settings (NVS).
+ *   - 0x000f3000 (4K)   factory       -> per-device provisioning blob.
  *   - 0x000f4000 (48K)  UF2 bootloader (read-only).
  */
 
@@ -43,12 +44,24 @@
 		};
 
 		/*
-		 * The flash starting at 0x000ed000 and ending at 0x000f4000 is
-		 * reserved for use by the application as a settings/NVS store.
+		 * 0x000ed000..0x000f3000 (24K) — application settings/NVS store
+		 * (Matter commissioning data, fabrics, ...).
 		 */
 		storage_partition: partition@ed000 {
 			label = "storage";
-			reg = <0x0000ed000 DT_SIZE_K(28)>;
+			reg = <0x0000ed000 DT_SIZE_K(24)>;
+		};
+
+		/*
+		 * 0x000f3000..0x000f4000 (one 4K page) — per-device provisioning
+		 * blob {discriminator, passcode, serial}. The browser provisioning
+		 * tool writes it as a SEPARATE UF2 targeting this fixed offset, so a
+		 * unit can be (re)provisioned without touching the app. Blank (0xFF)
+		 * -> firmware falls back to the compiled-in test creds.
+		 */
+		factory_partition: partition@f3000 {
+			label = "factory";
+			reg = <0x0000f3000 DT_SIZE_K(4)>;
 		};
 
 		boot_partition: partition@f4000 {
