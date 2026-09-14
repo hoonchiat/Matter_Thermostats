@@ -20,15 +20,20 @@ VID/PID and DAC/PAI into the `fctry` partition — see [../docs/MATTER.md](../do
 
 ## Host unit tests (no hardware needed)
 
-The pure components — NTC conversion and the control law — compile and run natively:
+The pure components — NTC conversion, the control law, occupancy, and the SHT40
+conversions — plus the OLED renderer compile and run natively:
 
 ```bash
 cd test/host
-make            # builds and runs both suites
+make            # builds & runs: thermistor, thermostat_core, occupancy, sht4x, ui
+make preview    # render the OLED screens to the terminal as ASCII
 ```
 
-These cover the R→T LUT interpolation and the hysteresis / min-off / min-on /
-startup-lockout / auto-dead-zone logic, including the boot fail-safe.
+These cover the R→T LUT interpolation; the hysteresis / min-off / min-on /
+startup-lockout / auto-dead-zone logic (including the boot fail-safe); the vacancy
+timeout; the Sensirion CRC-8 + tick→°C/%RH conversions; and the OLED render
+assertions (e.g. humidity appears on the SHT40 build). The same suite runs in CI on
+every push and pull request — see [`../.github/workflows/ci.yml`](../.github/workflows/ci.yml).
 
 ## Layout
 
@@ -36,11 +41,13 @@ startup-lockout / auto-dead-zone logic, including the boot fail-safe.
 |---|---|
 | `main/` | app entry, Matter glue, control orchestration, NVS, Kconfig |
 | `components/thermistor/` | 10K Type 2/3 NTC → °C (ADC + pure conversion) |
+| `components/sht4x/` | SHT40 I²C temperature + humidity (driver + pure conversions) |
 | `components/thermostat_core/` | pure control law (hysteresis + cycle protection) |
 | `components/rotary_encoder/` | PCNT quadrature decoder |
 | `components/button/` | debounced short/long-press |
 | `components/relays/` | W/Y/G/O·B output driver |
-| `components/ui_oled/` | SSD1306/SH1106 screen manager |
-| `test/host/` | host-side unit tests for the pure components |
+| `components/occupancy/` | PIR sensor + vacancy timeout / manual Home-Away |
+| `components/ui_oled/` | SSD1306/SH1106 screen manager + 5×7 font + settings menu |
+| `test/host/` | host-side unit + UI tests for the pure components |
 
 See [../docs/FIRMWARE.md](../docs/FIRMWARE.md) for the architecture and task model.
