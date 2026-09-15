@@ -8,7 +8,6 @@ idf_component_register(
         "."
     REQUIRES
         # Local drivers / logic components:
-        thermistor
         sht4x
         rotary_encoder
         button

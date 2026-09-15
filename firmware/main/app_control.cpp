@@ -1,6 +1,6 @@
 /*
  * app_control.cpp — the runtime: sensor task, control task, and UI task.
- * Ties together the thermistor, thermostat_core, relays, rotary_encoder,
+ * Ties together the sht4x sensor, thermostat_core, relays, rotary_encoder,
  * button and ui_oled components, and keeps g_state and Matter in sync.
  */
 #include "app_priv.h"
@@ -36,11 +36,11 @@ static i2c_master_bus_handle_t s_i2c_bus;  /* shared by the OLED and the SHT40  
 
 /* Settings-menu items (order = on-screen order). */
 enum {
-    MENU_FAN = 0,       /* fan speed: AUTO / LOW / MED / HIGH */
+    MENU_MODE = 0,      /* HEAT / COOL / FAN / AUTO           */
+    MENU_FAN,           /* fan speed: AUTO / LOW / MED / HIGH */
     MENU_PRESENCE,      /* Home / Away (manual toggle)        */
     MENU_OCC_SRC,       /* occupancy source: MANUAL / SENSOR  */
     MENU_UNITS,         /* °C / °F                    */
-    MENU_SENSOR,        /* NTC Type 2 / Type 3        */
     MENU_MATTER_CODE,   /* view Matter pairing code   */
     MENU_BACK,          /* return to home             */
     MENU_COUNT,
@@ -63,13 +63,27 @@ static const char *fan_speed_name(int s)
     }
 }
 
+/* Settings-menu MODE label. Fan-only shown as "FAN"; OFF is set via the push
+ * button, not this row, but handled here for completeness. */
+static const char *mode_name(int m)
+{
+    switch (m) {
+        case THERMO_MODE_HEAT:     return "HEAT";
+        case THERMO_MODE_COOL:     return "COOL";
+        case THERMO_MODE_FAN_ONLY: return "FAN";
+        case THERMO_MODE_AUTO:     return "AUTO";
+        case THERMO_MODE_OFF:
+        default:                   return "OFF";
+    }
+}
+
 /* Persistent buffers backing the UI model's string pointers (ui_task only). */
 static char s_code[24];
+static char s_menu_mode[20];
 static char s_menu_fan[20];
 static char s_menu_presence[20];
 static char s_menu_occsrc[20];
 static char s_menu_units[20];
-static char s_menu_sensor[20];
 static const char *s_menu_lines[UI_MENU_MAX];
 
 static inline int64_t now_ms(void) { return esp_timer_get_time() / 1000; }
@@ -90,27 +104,12 @@ static void sensor_task(void *arg)
 {
     (void)arg;
     app_lock();
-    bool use_sht = (g_state.cfg.sensor_kind == SENSOR_KIND_SHT40);
     int  offset_c100 = g_state.cfg.offset_c100;
     app_unlock();
 
-    if (use_sht) {
-        if (sht4x_init(s_i2c_bus, CONFIG_THERMO_SHT40_ADDR) != ESP_OK) {
-            ESP_LOGE(TAG, "SHT40 init failed");
-        }
-    } else {
-        thermistor_config_t tc = {
-            .adc_gpio      = CONFIG_THERMO_PIN_NTC_ADC,
-            .r_fix_ohm     = CONFIG_THERMO_DIVIDER_RFIX_OHM,
-            .vref_mv       = CONFIG_THERMO_DIVIDER_VREF_MV,
-            .type          = (ntc_type_t)g_state.cfg.ntc_type,
-            .median_n      = CONFIG_THERMO_ADC_MEDIAN_N,
-            .ema_alpha_pct = CONFIG_THERMO_EMA_ALPHA_PCT,
-            .offset_c100   = offset_c100,
-        };
-        if (thermistor_init(&tc) != ESP_OK) {
-            ESP_LOGE(TAG, "thermistor init failed");
-        }
+    /* SHT40 is the only room sensor: temperature + relative humidity over I2C. */
+    if (sht4x_init(s_i2c_bus, CONFIG_THERMO_SHT40_ADDR) != ESP_OK) {
+        ESP_LOGE(TAG, "SHT40 init failed");
     }
 
     int last_reported = INT32_MIN;
@@ -122,16 +121,12 @@ static void sensor_task(void *arg)
         float temp_c = 0.0f, rh_pct = 0.0f;
         bool fault = false, have_rh = false;
 
-        if (use_sht) {
-            bool f = false;
-            if (sht4x_read(&temp_c, &rh_pct, &f) == ESP_OK && !f) {
-                temp_c += offset_c100 / 100.0f;   /* apply calibration offset */
-                have_rh = true;
-            } else {
-                fault = true;
-            }
+        bool f = false;
+        if (sht4x_read(&temp_c, &rh_pct, &f) == ESP_OK && !f) {
+            temp_c += offset_c100 / 100.0f;       /* apply calibration offset */
+            have_rh = true;
         } else {
-            thermistor_read(&temp_c, &fault);     /* offset applied inside driver */
+            fault = true;
         }
 
         int temp_c100 = (int)(temp_c * 100.0f + (temp_c >= 0 ? 0.5f : -0.5f));
@@ -324,10 +319,20 @@ static bool adjust_setpoint(int delta)
 }
 
 /* Act on the selected settings-menu row. Sets change flags for the caller. */
-static void menu_activate(bool *changed_units, bool *changed_sensor,
+static void menu_activate(bool *changed_units, bool *changed_mode,
                           bool *changed_fan, bool *save)
 {
     switch (g_state.menu_index) {
+        case MENU_MODE:
+            /* cycle HEAT -> COOL -> FAN -> AUTO -> HEAT */
+            switch (g_state.cfg.mode) {
+                case THERMO_MODE_HEAT: g_state.cfg.mode = THERMO_MODE_COOL;     break;
+                case THERMO_MODE_COOL: g_state.cfg.mode = THERMO_MODE_FAN_ONLY; break;
+                case THERMO_MODE_FAN_ONLY: g_state.cfg.mode = THERMO_MODE_AUTO; break;
+                default:               g_state.cfg.mode = THERMO_MODE_HEAT;     break;
+            }
+            *changed_mode = true; *save = true;
+            break;
         case MENU_FAN:
             cycle_fan_speed();
             *changed_fan = true; *save = true;
@@ -348,14 +353,6 @@ static void menu_activate(bool *changed_units, bool *changed_sensor,
             g_state.cfg.fahrenheit = !g_state.cfg.fahrenheit;
             *changed_units = true; *save = true;
             break;
-        case MENU_SENSOR:
-            /* NTC curve is only meaningful for the thermistor; SHT40 row is view-only. */
-            if (g_state.cfg.sensor_kind == SENSOR_KIND_NTC) {
-                g_state.cfg.ntc_type =
-                    (g_state.cfg.ntc_type == NTC_TYPE_2) ? NTC_TYPE_3 : NTC_TYPE_2;
-                *changed_sensor = true; *save = true;
-            }
-            break;
         case MENU_MATTER_CODE:
             g_state.screen = UI_SCREEN_INFO;      /* show the payload detail */
             break;
@@ -369,7 +366,7 @@ static void menu_activate(bool *changed_units, bool *changed_sensor,
 static void handle_event(const app_event_t *e)
 {
     bool changed_setpoints = false, changed_unocc = false, changed_mode = false;
-    bool changed_units = false, changed_sensor = false, changed_fan = false, save = false;
+    bool changed_units = false, changed_fan = false, save = false;
     int  boot_action = -1;   /* BOOT chooser selection to act on after unlock */
 
     app_lock();
@@ -397,7 +394,7 @@ static void handle_event(const app_event_t *e)
                 boot_action = g_state.menu_index;  /* acted on after unlock */
                 if (boot_action == BOOT_OPT_CANCEL) g_state.screen = UI_SCREEN_HOME;
             } else if (scr == UI_SCREEN_MENU) {
-                menu_activate(&changed_units, &changed_sensor, &changed_fan, &save);
+                menu_activate(&changed_units, &changed_mode, &changed_fan, &save);
             } else if (scr == UI_SCREEN_INFO) {
                 g_state.screen = UI_SCREEN_MENU;   /* back to the list */
             } else {
@@ -473,7 +470,6 @@ static void handle_event(const app_event_t *e)
     if (changed_mode)      app_matter_report_mode(snapshot.mode);
     if (changed_units)     app_matter_report_units(snapshot.fahrenheit);
     if (changed_fan)       app_matter_report_fan(snapshot.fan_speed);
-    if (changed_sensor)    thermistor_set_type((ntc_type_t)snapshot.ntc_type);
     if (save)              app_nvs_save(&snapshot);
 
     /* BOOT chooser actions run outside the state lock (they open the Matter
@@ -494,14 +490,13 @@ static void handle_event(const app_event_t *e)
 
 static void build_model(ui_model_t *m)
 {
-    int ntc_type, fan_speed, occ_source, sensor_kind;
+    int mode, fan_speed, occ_source;
     bool occ_home_pref;
     app_lock();
     bool occ_live = g_state.occupied;
     m->temp_c100      = g_state.temp_c100;
     m->humidity_pct100 = g_state.humidity_pct100;
     m->humidity_valid  = g_state.humidity_valid;
-    sensor_kind       = g_state.cfg.sensor_kind;
     /* Show/edit the setpoints currently in effect: unoccupied when Away. */
     m->heat_set_c100  = occ_live ? g_state.cfg.heat_set_c100 : g_state.cfg.unocc_heat_c100;
     m->cool_set_c100  = occ_live ? g_state.cfg.cool_set_c100 : g_state.cfg.unocc_cool_c100;
@@ -518,7 +513,7 @@ static void build_model(ui_model_t *m)
     m->screen         = (ui_screen_t)g_state.screen;
     m->active_setpoint= g_state.active_setpoint;
     m->menu_index     = g_state.menu_index;
-    ntc_type          = g_state.cfg.ntc_type;
+    mode              = g_state.cfg.mode;
     fan_speed         = g_state.cfg.fan_speed;
     occ_source        = g_state.cfg.occ_source;
     occ_home_pref     = g_state.cfg.occ_manual_home;
@@ -532,22 +527,18 @@ static void build_model(ui_model_t *m)
 
     /* Settings-menu lines (LABEL: VALUE). PRESENCE shows the live resolved state
      * (in sensor mode) or the manual preference (in manual mode). */
+    snprintf(s_menu_mode,   sizeof(s_menu_mode),   "MODE: %s", mode_name(mode));
     snprintf(s_menu_fan,    sizeof(s_menu_fan),    "FAN: %s", fan_speed_name(fan_speed));
     snprintf(s_menu_presence, sizeof(s_menu_presence), "PRESENCE: %s",
              (occ_source == OCC_SRC_SENSOR ? m->occupied : occ_home_pref) ? "HOME" : "AWAY");
     snprintf(s_menu_occsrc, sizeof(s_menu_occsrc), "OCC SRC: %s",
              occ_source == OCC_SRC_SENSOR ? "SENSOR" : "MANUAL");
     snprintf(s_menu_units,  sizeof(s_menu_units),  "UNITS: %s", m->fahrenheit ? "F" : "C");
-    if (sensor_kind == SENSOR_KIND_SHT40)
-        snprintf(s_menu_sensor, sizeof(s_menu_sensor), "SENSOR: SHT40");
-    else
-        snprintf(s_menu_sensor, sizeof(s_menu_sensor), "SENSOR: TYPE %d",
-                 ntc_type == NTC_TYPE_2 ? 2 : 3);
+    s_menu_lines[MENU_MODE]        = s_menu_mode;
     s_menu_lines[MENU_FAN]         = s_menu_fan;
     s_menu_lines[MENU_PRESENCE]    = s_menu_presence;
     s_menu_lines[MENU_OCC_SRC]     = s_menu_occsrc;
     s_menu_lines[MENU_UNITS]       = s_menu_units;
-    s_menu_lines[MENU_SENSOR]      = s_menu_sensor;
     s_menu_lines[MENU_MATTER_CODE] = "MATTER CODE >";
     s_menu_lines[MENU_BACK]        = "BACK";
     for (int i = 0; i < MENU_COUNT && i < UI_MENU_MAX; ++i) m->menu_lines[i] = s_menu_lines[i];

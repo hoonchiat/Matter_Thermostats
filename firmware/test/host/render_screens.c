@@ -49,12 +49,12 @@ int main(void)
 
     printf("{\n");
 
-    /* HOME — NTC build (no humidity), HEAT calling, fan HIGH, °C */
+    /* HOME — HEAT calling, fan HIGH, °C, humidity 42% */
     m.screen = UI_SCREEN_HOME; m.mode = 1; m.calling_heat = true; m.fan_on = true;
-    m.fan_speed = 3; m.humidity_valid = false;
+    m.fan_speed = 3; m.humidity_valid = true; m.humidity_pct100 = 4200;
     ui_oled_render(&m); dump("home_heat");
 
-    /* HOME — SHT40 build, AUTO idle, fan AUTO, °C, humidity 45% */
+    /* HOME — AUTO idle, fan AUTO, °C, humidity 45% */
     m.mode = 3; m.calling_heat = false; m.fan_on = false; m.fan_speed = 0;
     m.humidity_valid = true; m.humidity_pct100 = 4500;
     ui_oled_render(&m); dump("home_sht");
@@ -73,15 +73,15 @@ int main(void)
     m.screen = UI_SCREEN_ADJUST; m.mode = 1; m.active_setpoint = 0;
     ui_oled_render(&m); dump("adjust");
 
-    /* MENU — top (FAN selected) */
+    /* MENU — top (MODE selected) */
     {
-        static const char *lines[] = { "FAN: AUTO", "PRESENCE: HOME", "OCC SRC: SENSOR",
-                                       "UNITS: C", "SENSOR: SHT40", "MATTER CODE >", "BACK" };
+        static const char *lines[] = { "MODE: AUTO", "FAN: AUTO", "PRESENCE: HOME",
+                                       "OCC SRC: SENSOR", "UNITS: C", "MATTER CODE >", "BACK" };
         for (int i = 0; i < 7; ++i) m.menu_lines[i] = lines[i];
         m.menu_count = 7;
         m.screen = UI_SCREEN_MENU; m.menu_index = 0;
         ui_oled_render(&m); dump("menu_top");
-        m.menu_index = 4;   /* scrolled: SENSOR row selected */
+        m.menu_index = 5;   /* scrolled: MATTER CODE row selected */
         ui_oled_render(&m); dump("menu_scroll");
     }
 

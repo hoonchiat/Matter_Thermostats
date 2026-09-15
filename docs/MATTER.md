@@ -58,9 +58,8 @@ toggle — so controllers and automations can react to presence.
 | Identify | 0x0003 | locate |
 | **Relative Humidity Measurement** | 0x0405 | `MeasuredValue` = %RH × 100 (uint16, `null` on fault) |
 
-This endpoint is created only when the room sensor is the **SHT40**; the NTC build has no
-humidity source and omits it, so the data model never advertises humidity the hardware
-cannot measure.
+The room sensor is the **SHT40**, which always provides relative humidity, so this endpoint
+is always present.
 
 ---
 

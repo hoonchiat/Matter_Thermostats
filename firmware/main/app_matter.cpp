@@ -254,19 +254,14 @@ int app_matter_start(void)
     if (!oep) { ESP_LOGE(TAG, "occupancy endpoint failed"); return ESP_FAIL; }
     s_occ_ep = endpoint::get_id(oep);
 
-    /* Endpoint 4: a Humidity Sensor (0x0307) — only when an SHT40 is fitted, so
-     * the data model doesn't advertise humidity the hardware can't measure. */
-    app_lock();
-    bool has_humidity = (g_state.cfg.sensor_kind == SENSOR_KIND_SHT40);
-    app_unlock();
-    if (has_humidity) {
-        /* TODO(matter): humidity_sensor::config_t field names track the SDK
-         * version (e.g. relative_humidity_measurement.measured_value). */
-        humidity_sensor::config_t hum_cfg;
-        endpoint_t *hep = humidity_sensor::create(node, &hum_cfg, ENDPOINT_FLAG_NONE, NULL);
-        if (!hep) { ESP_LOGE(TAG, "humidity endpoint failed"); return ESP_FAIL; }
-        s_hum_ep = endpoint::get_id(hep);
-    }
+    /* Endpoint 4: a Humidity Sensor (0x0307). The SHT40 is the only room sensor,
+     * so humidity is always available.
+     * TODO(matter): humidity_sensor::config_t field names track the SDK
+     * version (e.g. relative_humidity_measurement.measured_value). */
+    humidity_sensor::config_t hum_cfg;
+    endpoint_t *hep = humidity_sensor::create(node, &hum_cfg, ENDPOINT_FLAG_NONE, NULL);
+    if (!hep) { ESP_LOGE(TAG, "humidity endpoint failed"); return ESP_FAIL; }
+    s_hum_ep = endpoint::get_id(hep);
 
     esp_matter::start(app_device_event_cb);
 

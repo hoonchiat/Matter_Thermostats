@@ -43,10 +43,10 @@ int main(void)
     ui_oled_render(&m);
     CHECK(lit_pixels(X0, Y0, X1, Y1) > 0, "SHT40: humidity shown on HOME");
 
-    /* NTC (no humidity): nothing drawn in the humidity region. */
+    /* Humidity unavailable (before first read / fault): nothing drawn there. */
     m.humidity_valid = false; m.humidity_pct100 = 0;
     ui_oled_render(&m);
-    CHECK(lit_pixels(X0, Y0, X1, Y1) == 0, "NTC: no humidity on HOME");
+    CHECK(lit_pixels(X0, Y0, X1, Y1) == 0, "no humidity when unavailable");
 
     /* Running state (bottom-left) still renders regardless. */
     CHECK(lit_pixels(0, Y0, 50, Y1) > 0, "running-state text present");

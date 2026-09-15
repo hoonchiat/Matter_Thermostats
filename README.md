@@ -4,10 +4,10 @@
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
 An open, DIY-friendly smart thermostat built on the **Espressif ESP32-C6**, speaking
-**Matter over Thread**. It reads room temperature from an industry-standard **10 kΩ
-Type 2 / Type 3 NTC thermistor**, is controlled locally with a **rotary encoder + push
-button**, shows status on a small **I²C OLED**, and switches conventional 24 VAC HVAC
-loads (W / Y / G / O·B) through relays.
+**Matter over Thread**. It reads room **temperature and humidity** from a **Sensirion SHT40**
+I²C sensor, is controlled locally with a **rotary encoder + push button**, shows status on a
+small **I²C OLED**, and switches conventional 24 VAC HVAC loads (W / Y / G / O·B) through
+relays.
 
 Because it implements the standard Matter **Thermostat** device type, it pairs and works
 with Apple Home, Google Home, Amazon Alexa, Samsung SmartThings and Home Assistant — no
@@ -15,11 +15,11 @@ cloud, no vendor lock-in, all local control over a Thread mesh.
 
 > **Status:** Specification + firmware. This repository is the *engineering spec* for the
 > device plus a structured ESP-IDF / ESP-Matter project. Implemented: the self-contained
-> logic (thermistor conversion, control/hysteresis with fan-speed levels, encoder & button
-> input), a modern OLED UI (5×7 font, status bar with mode/fan/link icons, rounded setpoint
-> pill; home/adjust/menu/info/pairing/fault screens — previewable on a host PC), the local
-> **settings menu** (fan Auto/Low/Med/High, Home/Away presence + source, NTC Type 2/3, °C/°F,
-> Matter pairing code), **occupancy** (PIR sensor or manual toggle; Matter OCC feature with
+> logic (SHT40 temp/humidity conversion, control/hysteresis with fan-speed levels, encoder &
+> button input), a modern OLED UI (5×7 font, status bar with mode/fan/link icons, rounded
+> setpoint pill; home/adjust/menu/info/pairing/fault screens — previewable on a host PC), the
+> local **settings menu** (mode Heat/Cool/Fan/Auto, fan Auto/Low/Med/High, Home/Away presence
+> + source, °C/°F, Matter pairing code), **occupancy** (PIR sensor or manual toggle; Matter OCC feature with
 > separate unoccupied setpoints), and full **remote override from Matter** of mode, setpoints
 > and fan speed. Commissioning mirrors the esp-matter `light` example. The Matter endpoint wiring
 > is laid out with clearly marked integration points against the installed SDK version. See
@@ -34,8 +34,8 @@ cloud, no vendor lock-in, all local control over a Thread mesh.
 | **MCU** | ESP32-C6 (RISC-V, native 802.15.4 for Thread, Wi-Fi 6, BLE 5) |
 | **Connectivity** | Matter 1.x over Thread (self-healing mesh; mains-powered → acts as a Thread **router**/range extender); BLE for commissioning |
 | **Device type** | Matter Thermostat (`0x0301`) |
-| **Room sensor** | Selectable: **10 kΩ NTC** (HVAC Type 2/3, ADC) **or** **SHT40** I²C (temperature **+ humidity**) |
-| **Humidity** | With SHT40: relative humidity on the OLED and as a Matter Humidity Sensor |
+| **Room sensor** | **Sensirion SHT40** I²C — temperature **+ relative humidity** (shares the OLED bus; no extra GPIO) |
+| **Humidity** | Relative humidity on the OLED and as a Matter Humidity Sensor |
 | **Display** | 0.96″ (nom. "0.95″") **SSD1306** 128×64 monochrome OLED, I²C |
 | **Local input** | Incremental **rotary encoder** (quadrature + integrated switch), a dedicated **push button**, and a dedicated **fan-speed button** |
 | **HVAC output** | Relay/SSR: W (heat), Y (cool/compressor), G (fan), O·B (reversing valve) + optional 3-tap multi-speed blower |
@@ -50,7 +50,7 @@ cloud, no vendor lock-in, all local control over a Thread mesh.
 | Doc | What's in it |
 |---|---|
 | [`docs/SPECIFICATION.md`](docs/SPECIFICATION.md) | Product requirements, system architecture, and the complete component breakdown |
-| [`docs/HARDWARE.md`](docs/HARDWARE.md) | Block diagram, **pin map**, thermistor front-end design & math, power, BOM |
+| [`docs/HARDWARE.md`](docs/HARDWARE.md) | Block diagram, **pin map**, SHT40 room sensor, power, BOM |
 | [`docs/FIRMWARE.md`](docs/FIRMWARE.md) | Firmware architecture, RTOS tasks, control algorithm & state machine |
 | [`docs/MATTER.md`](docs/MATTER.md) | Matter data model (endpoints, clusters, attributes), commissioning flow |
 | [`docs/UI.md`](docs/UI.md) | OLED screen layouts and the encoder/button interaction model |
@@ -65,12 +65,11 @@ Matter_Thermostats/
 ├── .github/workflows/        # CI — host tests on every push / PR
 ├── docs/                     # Spec + owner's guide (start with SPECIFICATION.md)
 ├── hardware/                 # Pinout + BOM (CSV)
-├── tools/                    # NTC LUT, font, and user-guide generators
+├── tools/                    # font + user-guide generators
 └── firmware/                 # ESP-IDF / ESP-Matter project
     ├── main/                 # App entry, Matter wiring, control glue
     ├── test/host/            # Host unit + UI tests (pure C, no hardware)
     └── components/
-        ├── thermistor/       # 10K Type 2/3 NTC → °C  (implemented)
         ├── sht4x/            # SHT40 I2C temp + humidity (implemented)
         ├── rotary_encoder/   # PCNT quadrature decoder + switch (implemented)
         ├── button/           # debounced short/long-press (implemented)
@@ -88,7 +87,7 @@ Prerequisites: [ESP-IDF v5.2+](https://docs.espressif.com/projects/esp-idf/) and
 ```bash
 cd firmware
 idf.py set-target esp32c6
-idf.py menuconfig          # Component config → Matter Thermostat  (pins, thermistor type…)
+idf.py menuconfig          # Component config → Matter Thermostat  (pins, SHT40 addr, control…)
 idf.py build flash monitor
 ```
 
@@ -106,7 +105,7 @@ natively — no ESP-IDF, no hardware:
 
 ```bash
 cd firmware/test/host
-make            # thermistor, control law, occupancy, SHT40, and OLED UI render tests
+make            # control law, occupancy, SHT40, and OLED UI render tests
 make preview    # print the OLED screens to the terminal as ASCII
 ```
 

@@ -1,7 +1,7 @@
 # Hardware Design
 
-Covers the block diagram, **pin assignment**, thermistor analog front-end and its math,
-input/output stages, power, and the BOM. Machine-readable copies live in
+Covers the block diagram, **pin assignment**, the SHT40 room sensor, input/output stages,
+power, and the BOM. Machine-readable copies live in
 [`hardware/pinout.csv`](../hardware/pinout.csv) and [`hardware/bom.csv`](../hardware/bom.csv).
 
 ---
@@ -13,7 +13,7 @@ input/output stages, power, and the BOM. Machine-readable copies live in
    USB-C 5V ───▶ 3V3   │                                     │
    24VAC ─▶ [iso buck]─▶ LDO/buck ─▶ 3V3 ─▶ ESP32-C6-WROOM-1  │
                        │                                     │
-   10K NTC ─[divider+RC]────────────────▶ ADC1_CH1 (GPIO1)  │
+   SHT40 (temp+RH) ◀── I2C0 0x44 (shared bus) ──────────────│
    OLED SSD1306 ◀──── I2C0 (SDA GPIO6 / SCL GPIO7) ─────────│
    Encoder A/B ─────────────────────────▶ PCNT (GPIO10/11)  │
    Encoder SW ──────────────────────────▶ GPIO2             │
@@ -31,13 +31,12 @@ input/output stages, power, and the BOM. Machine-readable copies live in
 
 The ESP32-C6 GPIO matrix is flexible; the assignment below avoids the **strapping pins**
 (GPIO4, 5, 8*, 9*, 15), the **USB-Serial-JTAG** pins (GPIO12/13), the **UART0 console**
-(GPIO16/17), and the internal SPI-flash pins (GPIO24–30). ADC1 channels are GPIO0–GPIO6.
+(GPIO16/17), and the internal SPI-flash pins (GPIO24–30).
 
 | Signal | GPIO | On-chip peripheral | Direction | Notes |
 |---|---|---|---|---|
-| **NTC sense** | GPIO1 | ADC1_CH1 | AIN | Divider node; 12-bit, 12 dB atten |
-| **I²C SDA** (OLED) | GPIO6 | I2C0 | I/O | 4.7 kΩ pull-up to 3V3 |
-| **I²C SCL** (OLED) | GPIO7 | I2C0 | O | 4.7 kΩ pull-up to 3V3 |
+| **I²C SDA** (OLED + SHT40) | GPIO6 | I2C0 | I/O | 4.7 kΩ pull-up to 3V3; shared bus |
+| **I²C SCL** (OLED + SHT40) | GPIO7 | I2C0 | O | 4.7 kΩ pull-up to 3V3; shared bus |
 | **Encoder A / CLK** | GPIO10 | PCNT ch0 | IN | Hardware quadrature decode |
 | **Encoder B / DT** | GPIO11 | PCNT ch0 | IN | Hardware quadrature decode |
 | **Encoder switch** | GPIO2 | GPIO (ISR) | IN | Internal pull-up; press = select |
@@ -63,107 +62,54 @@ menuconfig option — change the board without touching code.
 
 ---
 
-## 3. Room sensor
+## 3. Room sensor (SHT40)
 
-Two build-time options (menuconfig → *Temperature / humidity sensor → Room sensor*):
+The room sensor is a **Sensirion SHT40** — a digital, factory-calibrated temperature +
+relative-humidity sensor on I²C. It is the only room sensor: there is no analog front-end,
+no ADC, and no thermistor.
 
-| Option | Interface | Provides | Notes |
-|---|---|---|---|
-| **10 kΩ NTC** (Type 2/3) | ADC (GPIO1) | temperature | the analog front-end below |
-| **SHT40** | I²C (0x44, shared OLED bus) | temperature **+ humidity** | no analog parts; digital, factory-calibrated |
+| Part | Interface | Provides | Address | Notes |
+|---|---|---|---|---|
+| **SHT40** (SHT40-AD1B) | I²C | temperature **+ relative humidity** | 0x44 (0x45 for -BD1B) | shares the OLED bus; no extra MCU pins |
 
-With the **SHT40**, the divider/ADC front-end (§3.1–3.4) is unpopulated — the sensor is a
-3-wire I²C part (VDD/GND/SDA/SCL) sharing the OLED bus, so it needs no extra MCU pins. Its
-humidity is surfaced on the OLED and as a Matter Humidity Sensor. The rest of this section
-covers the NTC analog front-end.
+### 3.1 Wiring
 
-### 3.1 Divider topology
-
-```
-        3V3
-         │
-       [ R_fix = 10.0 kΩ, 0.1% ]        ← fixed reference resistor (top)
-         │
-         ├───────────┬──────────▶ GPIO1 / ADC1_CH1
-         │         [ C = 100 nF ]        ← RC low-pass with R_series
-       [ R_ntc ]      │                    (also add ~1–2 kΩ series R for ADC/ESD)
-     10K NTC (Type2/3)│
-         │            │
-        GND          GND
-```
-
-With the NTC on the **bottom** leg, node voltage falls as temperature rises:
+The SHT40 is a 4-pin part (VDD / GND / SDA / SCL) that sits on the **same I²C0 bus** as the
+OLED (SDA GPIO6, SCL GPIO7, shared 4.7 kΩ pull-ups). The firmware creates one I²C master bus
+and adds both the OLED (0x3C) and the SHT40 (0x44) to it, so adding the sensor costs **no
+extra GPIO**. Decouple VDD with 100 nF close to the part.
 
 ```
-V_node = 3V3 · R_ntc / (R_fix + R_ntc)
+   3V3 ──┬───────────────┐
+         │             [ SHT40 ]
+      [0.1µF]   SDA ──── GPIO6 (I2C0, shared with OLED)
+         │      SCL ──── GPIO7 (I2C0, shared with OLED)
+        GND ───── GND
 ```
 
-Solving for the thermistor resistance from the measured node voltage:
+### 3.2 Reading & conversion
+
+The `sht4x` component issues the **high-precision measure** command (`0xFD`), reads 6 bytes
+(temperature word + CRC, humidity word + CRC), validates both bytes with the Sensirion
+**CRC-8** (poly 0x31, init 0xFF), and converts the raw ticks:
 
 ```
-R_ntc = R_fix · V_node / (Vref − V_node)
+T  [°C] = −45 + 175 · S_T  / 65535
+RH [%]  =  −6 + 125 · S_RH / 65535     (clamped to 0…100 %)
 ```
 
-where `Vref` is the divider top rail (nominally 3.30 V). Because the ESP32 ADC is **not**
-ratiometric to the supply (it references an internal ~1.1 V bandgap with attenuation), the
-firmware uses the ESP-IDF **ADC calibration** API to convert raw counts → millivolts, and
-`Vref` is a calibratable constant (`CONFIG_THERMO_DIVIDER_VREF_MV`). Powering the divider
-top from a clean, known 3.3 V (or a dedicated reference) directly improves accuracy.
+A user **calibration offset** (`offset`, 0.01 °C) is added after conversion. These pure
+functions are host-unit-tested (`firmware/test/host/test_sht4x.c`), including the datasheet
+CRC vector `0xBEEF → 0x92`.
 
-> **Design tip:** placing `R_fix` on top and the NTC on the bottom keeps the sense node at
-> a comfortable mid-scale voltage around room temperature and lands the steepest part of
-> the transfer curve in the comfort band, maximizing resolution where it matters.
+### 3.3 Accuracy & fault handling
 
-### 3.2 Resistance → temperature
-
-Two methods, both in `components/thermistor`:
-
-1. **Lookup table (primary, recommended for HVAC accuracy).** A monotonic R→T table per
-   curve (Type 2, Type 3) with linear interpolation between points. Generate it from the
-   manufacturer R-T table (or from β) with [`tools/gen_ntc_lut.py`](../tools/gen_ntc_lut.py):
-
-   ```bash
-   python3 tools/gen_ntc_lut.py --type 3 --tmin -20 --tmax 60 --step 5 > firmware/components/thermistor/ntc_type3_lut.inc
-   ```
-
-2. **Steinhart–Hart / β model (fallback & interpolation).**
-
-   β-model:
-   ```
-   1/T = 1/T0 + (1/β)·ln(R_ntc / R0)      T0 = 298.15 K, R0 = 10 kΩ
-   ```
-   Steinhart–Hart (more accurate over wide range):
-   ```
-   1/T = A + B·ln(R) + C·(ln R)³
-   ```
-   Coefficients are configurable per curve. Nominal starting values (validate against your
-   sensor's datasheet):
-
-   | Curve | β₍25/85₎ (K) | Notes |
-   |---|---|---|
-   | 10 kΩ Type 2 | ≈ 3891 | legacy/Honeywell-style "10K-2" |
-   | 10 kΩ Type 3 | ≈ 3976 | common "10K-3" (BAPI/ACI-style) |
-
-   The β values above are *nominal*; the LUT from the datasheet is authoritative.
-
-### 3.3 Filtering & fault handling
-
-- **Median-of-N** raw samples (default N=5) rejects impulse noise.
-- **EMA** (exponential moving average, α configurable) smooths the temperature output.
-- **Fault:** node voltage within a small band of 0 V or `Vref` ⇒ shorted or open sensor ⇒
-  report fault, blank `LocalTemperature` behavior per Matter, and force all relays off.
-
-### 3.4 Accuracy budget (typical, after 1-point calibration)
-
-| Source | Contribution |
-|---|---|
-| NTC tolerance (±1 %) | ~±0.25 °C near 25 °C |
-| R_fix 0.1 % | ~±0.03 °C |
-| ADC calibration | ~±0.1 °C |
-| Curve/LUT interpolation | ~±0.05 °C |
-| **Net (comfort band)** | **≈ ±0.3 °C** (NFR-1) |
-
-Self-heating is negligible: with `R_fix` = 10 kΩ the NTC dissipates ≲ 0.3 mW.
+- **Datasheet accuracy:** ±0.2 °C (typ.) temperature, ±1.8 %RH (typ.) — comfortably within
+  the ±0.3 °C comfort-band target (NFR-1), with no board-level calibration required.
+- **Fault:** a failed read or CRC mismatch ⇒ report fault, blank the Matter
+  `LocalTemperature`, and force all relays off (FR-12).
+- **Self-heating:** negligible at the ~1 Hz sampling used here (single-shot high-precision
+  reads, sensor idle between samples).
 
 ---
 
@@ -260,10 +206,10 @@ On-board addressable **WS2812** RGB (GPIO8, RMT-driven). Color/behavior encodes 
 ## 9. PCB / enclosure notes
 
 - Keep the module antenna at a board edge with the vendor keep-out; no copper/metal near it.
-- Route the NTC sense pair away from switching nodes; guard the ADC input; single-point
-  analog ground for the divider.
+- Keep the SHT40 I²C traces short; route them away from switching nodes.
 - Physically and electrically separate the 24 VAC section (creepage/clearance) from logic.
-- Mount the NTC away from the MCU/relays' self-heating; ideally a remote/edge-vented probe.
+- Mount the SHT40 away from the MCU/relays' self-heating and with airflow to the room —
+  ideally vented at the enclosure edge, or on a short remote pigtail off the shared I²C bus.
 
 ## 10. Bill of materials
 
@@ -276,10 +222,8 @@ Summary — full list in [`hardware/bom.csv`](../hardware/bom.csv):
 | 1 | EC11 rotary encoder w/ switch | A/B/SW |
 | 1 | Momentary push button | mode/back |
 | 1 | Momentary push button | fan-speed cycle (Auto/Low/Med/High) |
-| 1 | 10 kΩ NTC, Type 2 or Type 3 | room sensor |
-| 1 | 10.0 kΩ 0.1 % resistor | divider reference |
+| 1 | Sensirion SHT40 (SHT40-AD1B) | room sensor: temp + humidity, I²C 0x44 |
 | 2 | 4.7 kΩ resistor | I²C pull-ups |
-| 1 | 100 nF + 1–2 kΩ | ADC RC + series |
 | 4 | Relay or opto-triac + driver | W/Y/G/O·B |
 | 4 | Flyback diode / snubber | per relay |
 | 1 | WS2812 RGB LED | status |

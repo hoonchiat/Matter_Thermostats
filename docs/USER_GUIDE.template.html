@@ -218,9 +218,9 @@ footer .mono{color:var(--muted)}
         your smart-home app as a standard Matter thermostat over a Thread mesh — no cloud, all
         local. You can run it entirely from the dial and button, or from Apple&nbsp;Home,
         Google&nbsp;Home, Alexa, SmartThings or Home&nbsp;Assistant.</p>
-        <p>It supports two room-sensor builds: a <b>10&nbsp;kΩ NTC</b> (temperature only) or an
-        <b>SHT40</b> that also measures <b>relative humidity</b>. On the SHT40 build the humidity
-        is shown on the home screen and published as a Matter humidity sensor.</p>
+        <p>It uses a <b>Sensirion SHT40</b> sensor, so it measures both <b>temperature</b> and
+        <b>relative humidity</b>. The humidity is shown on the home screen and published as a
+        Matter humidity sensor.</p>
       </section>
 
       <section id="controls">
@@ -364,11 +364,11 @@ footer .mono{color:var(--muted)}
         <div class="tablewrap"><table>
           <thead><tr><th>Item</th><th>Choices</th><th>What it does</th></tr></thead>
           <tbody>
+            <tr><td><span class="k">MODE</span></td><td>Heat · Cool · Fan · Auto</td><td>Operating mode; mirrors to your smart-home app. (Off is set via the button.)</td></tr>
             <tr><td><span class="k">FAN</span></td><td>Auto · Low · Med · High</td><td>Auto runs the fan only during a heat/cool call; a fixed speed circulates continuously.</td></tr>
             <tr><td><span class="k">PRESENCE</span></td><td>Home · Away</td><td>Away switches to the unoccupied (setback) setpoints.</td></tr>
             <tr><td><span class="k">OCC SRC</span></td><td>Manual · Sensor</td><td>Whether Home/Away comes from the toggle or a motion/occupancy sensor.</td></tr>
             <tr><td><span class="k">UNITS</span></td><td>°C · °F</td><td>Display units. The setpoint step stays 0.5°.</td></tr>
-            <tr><td><span class="k">SENSOR</span></td><td>Type 2/3 · SHT40</td><td>NTC builds pick the thermistor curve; SHT40 is shown read-only.</td></tr>
             <tr><td><span class="k">MATTER CODE</span></td><td>view</td><td>Shows the manual pairing code full-screen.</td></tr>
             <tr><td><span class="k">BACK</span></td><td>—</td><td>Return to the home screen.</td></tr>
           </tbody>
@@ -417,8 +417,8 @@ const SCREENS = __SCREEN_DATA__;
 
 const META = {
   home_gallery: [
-    ["home_heat","Home","Heating call · NTC build","<li><b>HEAT</b> with a ▲ marker in the status bar; a filled dot in the pill means it's actively calling for heat.</li><li>Fan speed shows <b>HI</b> with a spinning fan icon; the link dot is filled (paired).</li><li>Bottom-left reads <b>HEATING</b>. No humidity — this is the NTC (temperature-only) build.</li>"],
-    ["home_sht","Home","Auto · SHT40 with humidity","<li><b>AUTO</b> shows both targets in the pill, each with its ▲/▼ marker.</li><li>Fan is <b>AU</b> (auto) — it runs only when heating or cooling.</li><li>Bottom-right shows <b>relative humidity</b> (e.g. 45%), present only on the SHT40 build.</li>"],
+    ["home_heat","Home","Heating call","<li><b>HEAT</b> with a ▲ marker in the status bar; a filled dot in the pill means it's actively calling for heat.</li><li>Fan speed shows <b>HI</b> with a spinning fan icon; the link dot is filled (paired).</li><li>Bottom-left reads <b>HEATING</b>; bottom-right shows the humidity.</li>"],
+    ["home_sht","Home","Auto · with humidity","<li><b>AUTO</b> shows both targets in the pill, each with its ▲/▼ marker.</li><li>Fan is <b>AU</b> (auto) — it runs only when heating or cooling.</li><li>Bottom-right shows <b>relative humidity</b> (e.g. 45%) from the SHT40.</li>"],
     ["home_f","Home","Cooling · °F","<li>Units switched to <b>°F</b> — the big temperature and the pill both follow.</li><li><b>COOL</b> with a ▼ marker; the pill's dot shows an active cool call.</li><li>Fan set to <b>MD</b> (medium).</li>"],
     ["home_away","Home","Away (setback)","<li>An <b>AWAY</b> badge appears bottom-right; the <b>unoccupied setpoints</b> are now in effect.</li><li>Set Away from Settings → Presence, or automatically from an occupancy sensor.</li><li>Returning to Home restores your comfort setpoints.</li>"],
   ],
@@ -426,11 +426,11 @@ const META = {
     ["adjust","Adjust","Turning the dial","<li>The target enlarges so you can see it while turning.</li><li>Each click is <b>0.5°</b>; the bar shows the position within the allowed range.</li><li>While Away, this edits the Away setpoint and the label reads <b>AWAY HEAT/COOL</b>.</li>"],
   ],
   menu_gallery: [
-    ["menu_top","Settings","Top of the list","<li>Open with a <b>long button press</b>. The highlighted row is inverted.</li><li>Turn the dial to move; <b>press</b> the dial to change the highlighted item.</li><li>A scrollbar on the right appears when the list is longer than the screen.</li>"],
-    ["menu_scroll","Settings","Scrolled down","<li>The list keeps the selection centred as you scroll.</li><li><b>SENSOR</b> shows the NTC curve to toggle, or <b>SHT40</b> read-only on that build.</li><li>Short-press the button to go back to Home.</li>"],
+    ["menu_top","Settings","Top of the list","<li>Open with a <b>long button press</b>. The highlighted row is inverted.</li><li><b>MODE</b> is first — press to cycle Heat → Cool → Fan → Auto.</li><li>Turn the dial to move; <b>press</b> the dial to change the highlighted item.</li>"],
+    ["menu_scroll","Settings","Scrolled down","<li>The list keeps the selection centred as you scroll.</li><li>A scrollbar on the right appears when the list is longer than the screen.</li><li>Short-press the button to go back to Home.</li>"],
   ],
   pairing_gallery: [
-    ["pairing","Pairing","Before it's added","<li>Shown automatically until the thermostat is added to a home.</li><li>Scan the <b>QR</b> or type the code; needs a Thread border router on the network.</li><li>Settings stay reachable so you can set units or sensor type before pairing.</li>"],
+    ["pairing","Pairing","Before it's added","<li>Shown automatically until the thermostat is added to a home.</li><li>Scan the <b>QR</b> or type the code; needs a Thread border router on the network.</li><li>Settings stay reachable so you can set the mode or units before pairing.</li>"],
     ["info","Matter code","Settings → Matter code","<li>The 11-digit <b>manual pairing code</b>, shown large.</li><li>Use it to add the thermostat to another home without a factory reset.</li><li>Available whether or not it's already paired.</li>"],
     ["boot_menu","BOOT options","Hold BOOT ≥10 s","<li>Holding the recessed <b>BOOT</b> button for 10 seconds opens this chooser.</li><li><b>Pairing</b> re-opens the commissioning window so a controller can add the device.</li><li><b>Factory reset</b> erases the pairing and Thread network. Turn to pick, press to confirm; <b>Cancel</b> (or wait) backs out.</li>"],
   ],

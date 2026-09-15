@@ -11,7 +11,6 @@
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
 #include "thermostat_core.h"
-#include "thermistor.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -19,14 +18,12 @@ extern "C" {
 
 /* ---- persisted user configuration (NVS namespace "thermo_cfg") ------------ */
 typedef struct {
-    int  sensor_kind;       /* sensor_kind_t: 0=NTC, 1=SHT40     */
     int  mode;              /* thermo_mode_t                     */
     int  heat_set_c100;     /* 0.01 C                            */
     int  cool_set_c100;     /* 0.01 C                            */
     int  deadband_c10;      /* 0.1 C units                       */
     int  offset_c100;       /* calibration, 0.01 C               */
     bool fahrenheit;        /* display units                     */
-    int  ntc_type;          /* ntc_type_t                        */
     int  min_off_s;
     int  min_on_s;
     int  hp_reversing;      /* thermo_hp_mode_t                  */
@@ -40,9 +37,6 @@ typedef struct {
 
 /* Occupancy source. */
 typedef enum { OCC_SRC_MANUAL = 0, OCC_SRC_SENSOR = 1 } occ_source_t;
-
-/* Room sensor kind. */
-typedef enum { SENSOR_KIND_NTC = 0, SENSOR_KIND_SHT40 = 1 } sensor_kind_t;
 
 /* ---- live application state (single source of truth) ---------------------- */
 typedef struct {

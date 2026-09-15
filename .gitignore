@@ -18,7 +18,6 @@ __pycache__/
 venv/
 
 # Host unit-test binaries
-firmware/test/host/test_thermistor
 firmware/test/host/test_thermostat_core
 firmware/test/host/test_occupancy
 firmware/test/host/test_sht4x

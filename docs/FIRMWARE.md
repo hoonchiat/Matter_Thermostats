@@ -17,7 +17,6 @@ firmware/
 │   ├── app_nvs.cpp/.h        # load/save persisted config
 │   └── Kconfig.projbuild     # all pins & defaults exposed to menuconfig
 └── components/
-    ├── thermistor/           # ADC + NTC(Type2/3) → °C          [implemented]
     ├── sht4x/                # SHT40 I2C temp + humidity         [implemented]
     ├── rotary_encoder/       # PCNT quadrature + switch          [implemented]
     ├── button/               # debounce + short/long press       [implemented]
@@ -65,7 +64,7 @@ safety logic isolated from Matter/driver churn.
 
 | Task | Prio | Period | Responsibility |
 |---|---|---|---|
-| `sensor_task` | med | 1 Hz | read the selected sensor (NTC via ADC, or SHT40 via I²C), publish temp (+ humidity for SHT40) + fault |
+| `sensor_task` | med | 1 Hz | read the SHT40 over I²C, publish temperature + humidity + fault |
 | `control_task` | high | 0.5 s | run `thermostat_core`, drive relays, timers, push Matter attrs |
 | `ui_task` | low | event + 10 Hz redraw | encoder/button handling, OLED rendering |
 | CHIP event loop | (stack) | — | Matter interaction model, Thread |
@@ -229,7 +228,7 @@ are stored by the stack in its own NVS partition.
 ```bash
 cd firmware
 idf.py set-target esp32c6
-idf.py menuconfig      # → "Matter Thermostat" : pins, thermistor type, deadband, timers…
+idf.py menuconfig      # → "Matter Thermostat" : pins, SHT40 addr, deadband, timers…
 idf.py build
 idf.py -p <PORT> flash monitor
 ```
@@ -242,15 +241,15 @@ OTA A/B + NVS). See `firmware/sdkconfig.defaults` and `firmware/sdkconfig.defaul
 
 ## 8. Testing strategy
 
-- **Host unit tests** for `thermistor` (R→T against known points), `thermostat_core`
-  (hysteresis boundaries, min-off/min-on gating, auto dead-zone, fan-speed levels,
-  fail-safe), `occupancy` (vacancy-timeout boundaries, clock-anomaly fail-safe), and
-  `sht4x` (Sensirion CRC-8 vector + tick→°C/%RH conversions). These components are pure C
-  with no ESP dependency, so they compile and run on a PC: `cd firmware/test/host && make`.
+- **Host unit tests** for `thermostat_core` (hysteresis boundaries, min-off/min-on gating,
+  auto dead-zone, fan-speed levels, fail-safe), `occupancy` (vacancy-timeout boundaries,
+  clock-anomaly fail-safe), and `sht4x` (Sensirion CRC-8 vector + tick→°C/%RH conversions).
+  These components are pure C with no ESP dependency, so they compile and run on a PC:
+  `cd firmware/test/host && make`.
 - **Host UI preview:** `make preview` renders every OLED screen to the terminal as ASCII
   (the `ui_oled` drawing path compiles under `UI_OLED_HOST`), so layouts are verifiable
   without hardware.
-- **On-target smoke:** verify ADC↔temp with a reference thermometer; encoder count
+- **On-target smoke:** verify SHT40 temp/humidity against a reference meter; encoder count
   stability; relay actuation with an LED load before wiring 24 VAC; commissioning against a
   real Border Router + controller.
 - **Soak:** confirm min-off never violated under rapid setpoint changes; Thread rejoin
