@@ -197,10 +197,14 @@ int app_matter_start(void)
     if (!node) { ESP_LOGE(TAG, "node create failed"); return ESP_FAIL; }
 
     thermostat::config_t th_cfg;
-    /* Seed defaults from persisted config so the model matches local state. */
+    /* Seed defaults from persisted config so the model matches local state.
+     * The occupied setpoints live in the Heating/Cooling *feature* sub-configs
+     * (config_t.thermostat.heating / .cooling), not directly on the cluster
+     * config. endpoint::thermostat::create() enables the Heating|Cooling
+     * features (see esp_matter_endpoint.cpp), so these seeds take effect. */
     app_lock();
-    th_cfg.thermostat.occupied_heating_setpoint = (int16_t)g_state.cfg.heat_set_c100;
-    th_cfg.thermostat.occupied_cooling_setpoint = (int16_t)g_state.cfg.cool_set_c100;
+    th_cfg.thermostat.heating.occupied_heating_setpoint = (int16_t)g_state.cfg.heat_set_c100;
+    th_cfg.thermostat.cooling.occupied_cooling_setpoint = (int16_t)g_state.cfg.cool_set_c100;
     th_cfg.thermostat.control_sequence_of_operation = 4;   /* Cooling & Heating */
     th_cfg.thermostat.system_mode = mode_to_matter(g_state.cfg.mode);
     app_unlock();
