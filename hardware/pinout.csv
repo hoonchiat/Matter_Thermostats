@@ -7,6 +7,7 @@ ENC_A,10,PCNT_ch0,in,rotary encoder A/CLK; hardware quadrature
 ENC_B,11,PCNT_ch0,in,rotary encoder B/DT; hardware quadrature
 ENC_SW,2,GPIO_ISR,in,encoder push switch; internal pull-up; select
 BTN_PUSH,3,GPIO_ISR,in,dedicated push button; internal pull-up; mode/back
+BTN_FAN,14,GPIO_ISR,in,dedicated fan-speed button; internal pull-up; cycles Auto/Low/Med/High; -1=unused
 RELAY_W_HEAT,18,GPIO,out,heat call; active-high to driver
 RELAY_Y_COOL,19,GPIO,out,cool/compressor call; active-high to driver
 RELAY_G_FAN,20,GPIO,out,fan enable (any speed>0); active-high to driver

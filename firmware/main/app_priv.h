@@ -71,6 +71,7 @@ typedef enum {
     EVT_ENCODER_DELTA = 0,  /* value = signed detents            */
     EVT_BTN_MODE_SHORT,     /* dedicated push button, short      */
     EVT_BTN_MENU_LONG,      /* dedicated push button, long       */
+    EVT_BTN_FAN_SHORT,      /* dedicated fan-speed button, short */
     EVT_ENC_SW_SHORT,       /* encoder switch, short             */
     EVT_ENC_SW_LONG,        /* encoder switch, long              */
     EVT_RESET_LONG,         /* BOOT button long → factory reset  */

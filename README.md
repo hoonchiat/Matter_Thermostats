@@ -37,9 +37,9 @@ cloud, no vendor lock-in, all local control over a Thread mesh.
 | **Room sensor** | Selectable: **10 kΩ NTC** (HVAC Type 2/3, ADC) **or** **SHT40** I²C (temperature **+ humidity**) |
 | **Humidity** | With SHT40: relative humidity on the OLED and as a Matter Humidity Sensor |
 | **Display** | 0.96″ (nom. "0.95″") **SSD1306** 128×64 monochrome OLED, I²C |
-| **Local input** | Incremental **rotary encoder** (quadrature + integrated switch) and a dedicated **push button** |
+| **Local input** | Incremental **rotary encoder** (quadrature + integrated switch), a dedicated **push button**, and a dedicated **fan-speed button** |
 | **HVAC output** | Relay/SSR: W (heat), Y (cool/compressor), G (fan), O·B (reversing valve) + optional 3-tap multi-speed blower |
-| **Fan control** | Auto / Low / Med / High — local (menu) and remote (Matter Fan Control cluster) |
+| **Fan control** | Auto / Low / Med / High — dedicated button, settings menu, and remote (Matter Fan Control cluster) |
 | **Occupancy** | PIR/occupancy sensor **or** manual Home/Away toggle; Matter OCC feature with separate unoccupied setpoints; published as a Matter Occupancy Sensor |
 | **Modes** | Off / Heat / Cool / Auto / Fan-only (Honeywell-Home-style UX) |
 | **Power** | USB-C 5 V (bench) or 24 VAC → 5 V (field install) |

@@ -28,7 +28,7 @@
 #define COOL_MAX 3200
 
 /* Button identifiers. */
-enum { BTN_ID_PUSH = 1, BTN_ID_ENC_SW = 2, BTN_ID_RESET = 3 };
+enum { BTN_ID_PUSH = 1, BTN_ID_ENC_SW = 2, BTN_ID_RESET = 3, BTN_ID_FAN = 4 };
 
 static QueueHandle_t s_btn_q;      /* button_event_t from the button component */
 static int64_t s_last_adjust_ms;   /* for ADJUST auto-timeout                  */
@@ -268,6 +268,10 @@ static void button_task(void *arg)
             case BTN_ID_RESET:
                 if (ev.type == BUTTON_EVENT_LONG) app_post_event(EVT_RESET_LONG, 0);
                 break;
+            case BTN_ID_FAN:
+                /* dedicated fan-speed button: short press cycles the speed */
+                if (ev.type == BUTTON_EVENT_SHORT) app_post_event(EVT_BTN_FAN_SHORT, 0);
+                break;
         }
     }
 }
@@ -285,6 +289,13 @@ static void cycle_mode(void)
         default:               m = THERMO_MODE_OFF;  break;
     }
     g_state.cfg.mode = m;
+}
+
+/* Cycle the fan speed AUTO -> LOW -> MED -> HIGH -> AUTO.
+ * Shared by the settings-menu FAN row and the dedicated fan-speed button. */
+static void cycle_fan_speed(void)
+{
+    g_state.cfg.fan_speed = (g_state.cfg.fan_speed + 1) % 4;
 }
 
 /* Adjust the active setpoint by encoder detents (home/adjust screens only).
@@ -312,8 +323,7 @@ static void menu_activate(bool *changed_units, bool *changed_sensor,
 {
     switch (g_state.menu_index) {
         case MENU_FAN:
-            /* cycle AUTO -> LOW -> MED -> HIGH -> AUTO */
-            g_state.cfg.fan_speed = (g_state.cfg.fan_speed + 1) % 4;
+            cycle_fan_speed();
             *changed_fan = true; *save = true;
             break;
         case MENU_PRESENCE:
@@ -400,6 +410,13 @@ static void handle_event(const app_event_t *e)
                 g_state.screen = UI_SCREEN_MENU;
                 g_state.menu_index = 0;
             }
+            break;
+
+        case EVT_BTN_FAN_SHORT:                    /* dedicated fan-speed button */
+            /* Works from any screen: cycle AUTO -> LOW -> MED -> HIGH. The new
+             * speed shows in the home status bar and the FAN settings row. */
+            cycle_fan_speed();
+            changed_fan = true; save = true;
             break;
 
         case EVT_ENC_SW_LONG:
@@ -538,6 +555,12 @@ static void ui_task(void *arg)
     button_add(&b_push);
     button_add(&b_encsw);
     button_add(&b_reset);
+    /* Optional dedicated fan-speed button (omit when the pin is -1). */
+    if (CONFIG_THERMO_PIN_BTN_FAN >= 0) {
+        button_cfg_t b_fan = { .gpio = CONFIG_THERMO_PIN_BTN_FAN, .id = BTN_ID_FAN,
+                               .active_low = true, .long_press_ms = 3000 };
+        button_add(&b_fan);
+    }
     xTaskCreate(button_task, "button", 3072, NULL, 5, NULL);
 
     ui_oled_config_t oc = {

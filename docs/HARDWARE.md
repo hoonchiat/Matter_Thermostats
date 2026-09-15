@@ -18,6 +18,7 @@ input/output stages, power, and the BOM. Machine-readable copies live in
    Encoder A/B ─────────────────────────▶ PCNT (GPIO10/11)  │
    Encoder SW ──────────────────────────▶ GPIO2             │
    Push button ─────────────────────────▶ GPIO3             │
+   Fan speed btn ───────────────────────▶ GPIO14            │
    RGB status LED ◀──── RMT (GPIO8)                          │
    Relays W/Y/G/OB ◀── GPIO18/19/20/21 ─▶ [drivers] ─▶ 24VAC │
    BOOT/reset btn ──────────────────────▶ GPIO9             │
@@ -41,6 +42,7 @@ The ESP32-C6 GPIO matrix is flexible; the assignment below avoids the **strappin
 | **Encoder B / DT** | GPIO11 | PCNT ch0 | IN | Hardware quadrature decode |
 | **Encoder switch** | GPIO2 | GPIO (ISR) | IN | Internal pull-up; press = select |
 | **Push button** | GPIO3 | GPIO (ISR) | IN | Internal pull-up; mode / back |
+| **Fan-speed button** | GPIO14 | GPIO (ISR) | IN | Internal pull-up; cycles Auto/Low/Med/High (−1 = unused) |
 | **Relay W** (heat) | GPIO18 | GPIO | OUT | Active-high to driver |
 | **Relay Y** (cool/compressor) | GPIO19 | GPIO | OUT | Active-high to driver |
 | **Relay G** (fan enable) | GPIO20 | GPIO | OUT | Active-high; any fan speed > 0 |
@@ -191,6 +193,11 @@ Self-heating is negligible: with `R_fix` = 10 kΩ the NTC dissipates ≲ 0.3 mW.
   glitch filter.
 - **Encoder switch (SW)** and **push button:** momentary, active-low with internal
   pull-ups; debounced in firmware (`components/button`) with short/long-press detection.
+- **Fan-speed button (optional):** a dedicated momentary button on
+  `CONFIG_THERMO_PIN_BTN_FAN` (default GPIO14, active-low, internal pull-up). Each short
+  press cycles the fan speed **Auto → Low → Med → High → Auto**; the new speed shows in the
+  OLED status bar and mirrors to the Matter Fan Control cluster. Leave the pin at −1 to use
+  only the settings menu / Matter for fan control.
 - **BOOT/reset button:** doubles as the factory-reset input (long-press).
 - **Occupancy / PIR sensor (optional):** a digital motion output (e.g. HC-SR501, AM312, or
   a PIR module) on `CONFIG_THERMO_PIN_OCCUPANCY`. Active-high by default (idle low, high on
@@ -266,6 +273,7 @@ Summary — full list in [`hardware/bom.csv`](../hardware/bom.csv):
 | 1 | SSD1306 128×64 I²C OLED | 0x3C |
 | 1 | EC11 rotary encoder w/ switch | A/B/SW |
 | 1 | Momentary push button | mode/back |
+| 1 | Momentary push button | fan-speed cycle (Auto/Low/Med/High) |
 | 1 | 10 kΩ NTC, Type 2 or Type 3 | room sensor |
 | 1 | 10.0 kΩ 0.1 % resistor | divider reference |
 | 2 | 4.7 kΩ resistor | I²C pull-ups |

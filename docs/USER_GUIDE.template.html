@@ -116,7 +116,7 @@ h3{font-size:16px;font-weight:600;margin:22px 0 8px}
 .gcard li b{color:var(--ink);font-weight:600}
 
 /* ---- control cards ---- */
-.controls{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:16px}
+.controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:16px;margin-top:16px}
 .ctl{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
   padding:18px;box-shadow:var(--shadow)}
 .ctl .ic{width:34px;height:34px;border-radius:9px;background:var(--surface-2);border:1px solid var(--line);
@@ -226,9 +226,9 @@ footer .mono{color:var(--muted)}
       <section id="controls">
         <div class="kicker">Controls</div>
         <h2>The dial and the button</h2>
-        <p class="lead">Two controls do everything: the rotary dial (turn and press) and the
-        push button. A third button — the recessed <span class="k">BOOT</span> — is used only for
-        a factory reset.</p>
+        <p class="lead">The rotary dial (turn and press) and the push button do most things,
+        with a dedicated fan-speed button alongside them. A fourth button — the recessed
+        <span class="k">BOOT</span> — is used only for a factory reset.</p>
         <div class="controls">
           <div class="ctl">
             <div class="ic" aria-hidden="true">
@@ -248,6 +248,15 @@ footer .mono{color:var(--muted)}
             <dl>
               <dt>Short</dt><dd>Cycle mode: Off → Heat → Cool → Auto. In a menu, go back.</dd>
               <dt>Long ≥3s</dt><dd>Open the Settings menu.</dd>
+            </dl>
+          </div>
+          <div class="ctl">
+            <div class="ic" aria-hidden="true">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="2.6"/><path d="M12 9.4c2.4-3.4 5.6-3.4 6.4-1.2.8 2.2-2 3.8-6.4 3.8"/><path d="M14.6 12c3.4 2.4 3.4 5.6 1.2 6.4-2.2.8-3.8-2-3.8-6.4"/><path d="M12 14.6c-2.4 3.4-5.6 3.4-6.4 1.2-.8-2.2 2-3.8 6.4-3.8"/></svg>
+            </div>
+            <h3>Fan button</h3>
+            <dl>
+              <dt>Short</dt><dd>Cycle fan speed: Auto → Low → Med → High. Works from any screen.</dd>
             </dl>
           </div>
           <div class="ctl">
@@ -338,7 +347,7 @@ footer .mono{color:var(--muted)}
           <tbody>
             <tr><td>Change the target temperature</td><td>Turn the dial (0.5° per click).</td></tr>
             <tr><td>Switch mode</td><td>Short-press the button: Off → Heat → Cool → Auto.</td></tr>
-            <tr><td>Set fan speed</td><td>Settings → <span class="k">FAN</span> → press to cycle Auto / Low / Med / High.</td></tr>
+            <tr><td>Set fan speed</td><td>Press the <b>fan button</b> to cycle Auto / Low / Med / High — or Settings → <span class="k">FAN</span>.</td></tr>
             <tr><td>Set Home / Away</td><td>Settings → <span class="k">PRESENCE</span>. Away uses the setback (unoccupied) setpoints.</td></tr>
             <tr><td>Switch °C / °F</td><td>Settings → <span class="k">UNITS</span>.</td></tr>
             <tr><td>Show the pairing code</td><td>Settings → <span class="k">MATTER CODE</span>.</td></tr>
@@ -377,6 +386,7 @@ footer .mono{color:var(--muted)}
             <tr><td>Dial press</td><td>Switch active setpoint (Auto)</td><td>Change / open item</td></tr>
             <tr><td>Button short</td><td>Cycle mode</td><td>Back</td></tr>
             <tr><td>Button long (3s)</td><td>Open Settings</td><td>Exit to Home</td></tr>
+            <tr><td>Fan button</td><td colspan="2">Cycle fan speed: Auto → Low → Med → High (any screen)</td></tr>
             <tr><td>BOOT long (5s)</td><td colspan="2">Factory reset (with confirmation)</td></tr>
           </tbody>
         </table></div>

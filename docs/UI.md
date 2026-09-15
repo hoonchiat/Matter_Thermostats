@@ -1,8 +1,8 @@
 # Local UI — OLED Screens & Interaction Model
 
-Display: SSD1306 128×64 monochrome. Inputs: rotary **encoder** (rotate + press) and a
-**push button**. The UI is a small state machine; every input gives feedback in < 100 ms
-(NFR-3).
+Display: SSD1306 128×64 monochrome. Inputs: rotary **encoder** (rotate + press), a
+**push button**, and a dedicated **fan-speed button**. The UI is a small state machine;
+every input gives feedback in < 100 ms (NFR-3).
 
 ---
 
@@ -14,6 +14,7 @@ Display: SSD1306 128×64 monochrome. Inputs: rotary **encoder** (rotate + press)
 | Encoder press (SW) | short | toggle which setpoint is active (Heat/Cool) in Auto; else enter menu on the field | select / confirm |
 | Push button | short | cycle System Mode: Off → Heat → Cool → Auto | back / cancel |
 | Push button | long (≥3 s) | open Settings menu | exit to Home |
+| Fan-speed button | short | cycle Fan: Auto → Low → Med → High | cycle fan speed |
 | BOOT button | long (≥5 s) | factory-reset confirmation | — |
 
 An **adjust timeout** (default 4 s) commits a setpoint change and returns the home screen
@@ -117,9 +118,10 @@ bottom row and the **unoccupied setpoints** are in effect (Matter OCC feature) �
 pill and the ADJUST screen then show/edit those (ADJUST reads `AWAY HEAT` / `AWAY COOL`),
 so turning the encoder while Away changes the Away temperature, not the comfort one.
 
-Fan speed can also be changed remotely from any Matter controller (see
-[MATTER.md](MATTER.md)); local and remote stay in sync. `AUTO` runs the fan only during a
-heat/cool call; `LOW/MED/HIGH` run it continuously at that speed (circulate).
+Fan speed has three interchangeable controls that stay in sync: the dedicated **fan-speed
+button** (short-press cycles Auto → Low → Med → High from any screen), the `FAN` settings
+row, and any Matter controller (see [MATTER.md](MATTER.md)). `AUTO` runs the fan only during
+a heat/cool call; `LOW/MED/HIGH` run it continuously at that speed (circulate).
 
 The selected row is drawn as an inverted (highlighted) bar. Changes are persisted to NVS
 immediately and, where relevant, pushed to Matter controllers.

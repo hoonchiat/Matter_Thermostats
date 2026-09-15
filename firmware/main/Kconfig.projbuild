@@ -28,6 +28,15 @@ menu "Matter Thermostat"
             int "Push button GPIO"
             default 3
 
+        config THERMO_PIN_BTN_FAN
+            int "Fan-speed button GPIO (-1 = not used)"
+            default 14
+            help
+                Dedicated momentary push button that cycles the fan speed
+                Auto -> Low -> Med -> High -> Auto on each short press.
+                Active-low (internal pull-up; wire to GND). Set to -1 to
+                omit the button and use only the settings menu / Matter.
+
         config THERMO_PIN_RELAY_W
             int "Relay W (heat) GPIO"
             default 18
