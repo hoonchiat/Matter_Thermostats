@@ -138,7 +138,8 @@ static esp_err_t app_identification_cb(identification::callback_type_t type,
                                        uint8_t effect_variant, void *priv)
 {
     ESP_LOGI(TAG, "identify: ep=%u effect=%u", endpoint_id, effect_id);
-    /* TODO(app): blink the status LED while identifying. */
+    /* No status LED — surface Identify as an on-screen banner instead. */
+    app_on_identify(15);
     return ESP_OK;
 }
 

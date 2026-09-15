@@ -45,6 +45,7 @@ CI on every push and pull request — see [`../.github/workflows/ci.yml`](../.gi
 | `components/button/` | debounced short/long-press |
 | `components/relays/` | W/Y/G/O·B output driver |
 | `components/occupancy/` | PIR sensor + vacancy timeout / manual Home-Away |
+| `components/i18n/` | UI string catalog (English / French / Spanish / German) |
 | `components/ui_oled/` | SSD1306/SH1106 screen manager + 5×7 font + settings menu |
 | `test/host/` | host-side unit + UI tests for the pure components |
 

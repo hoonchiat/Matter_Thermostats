@@ -18,6 +18,7 @@
 #include "relays.h"
 #include "occupancy.h"
 #include "sht4x.h"
+#include "i18n.h"
 
 #define TAG "app_control"
 
@@ -41,6 +42,7 @@ enum {
     MENU_PRESENCE,      /* Home / Away (manual toggle)        */
     MENU_OCC_SRC,       /* occupancy source: MANUAL / SENSOR  */
     MENU_UNITS,         /* °C / °F                    */
+    MENU_LANGUAGE,      /* EN / FR / ES / DE          */
     MENU_MATTER_CODE,   /* view Matter pairing code   */
     MENU_BACK,          /* return to home             */
     MENU_COUNT,
@@ -52,38 +54,39 @@ enum { BOOT_OPT_PAIRING = 0, BOOT_OPT_RESET, BOOT_OPT_CANCEL, BOOT_OPT_COUNT };
 /* Auto-dismiss the BOOT chooser back to HOME after this idle time. */
 #define BOOT_MENU_TIMEOUT_MS 15000
 
-static const char *fan_speed_name(int s)
+/* i18n message ids for the current fan speed / mode (settings-menu values). */
+static int fan_speed_msg(int s)
 {
     switch (s) {
-        case THERMO_FAN_LOW:  return "LOW";
-        case THERMO_FAN_MED:  return "MED";
-        case THERMO_FAN_HIGH: return "HIGH";
+        case THERMO_FAN_LOW:  return STR_F_LOW;
+        case THERMO_FAN_MED:  return STR_F_MED;
+        case THERMO_FAN_HIGH: return STR_F_HIGH;
         case THERMO_FAN_AUTO:
-        default:              return "AUTO";
+        default:              return STR_F_AUTO;
     }
 }
 
-/* Settings-menu MODE label. Fan-only shown as "FAN"; OFF is set via the push
- * button, not this row, but handled here for completeness. */
-static const char *mode_name(int m)
+static int mode_msg_id(int m)
 {
     switch (m) {
-        case THERMO_MODE_HEAT:     return "HEAT";
-        case THERMO_MODE_COOL:     return "COOL";
-        case THERMO_MODE_FAN_ONLY: return "FAN";
-        case THERMO_MODE_AUTO:     return "AUTO";
+        case THERMO_MODE_HEAT:     return STR_M_HEAT;
+        case THERMO_MODE_COOL:     return STR_M_COOL;
+        case THERMO_MODE_FAN_ONLY: return STR_M_FAN;
+        case THERMO_MODE_AUTO:     return STR_M_AUTO;
         case THERMO_MODE_OFF:
-        default:                   return "OFF";
+        default:                   return STR_M_OFF;
     }
 }
 
 /* Persistent buffers backing the UI model's string pointers (ui_task only). */
 static char s_code[24];
-static char s_menu_mode[20];
-static char s_menu_fan[20];
-static char s_menu_presence[20];
-static char s_menu_occsrc[20];
+static char s_menu_mode[24];
+static char s_menu_fan[24];
+static char s_menu_presence[24];
+static char s_menu_occsrc[24];
 static char s_menu_units[20];
+static char s_menu_language[24];
+static char s_menu_code[20];
 static const char *s_menu_lines[UI_MENU_MAX];
 
 static inline int64_t now_ms(void) { return esp_timer_get_time() / 1000; }
@@ -353,6 +356,10 @@ static void menu_activate(bool *changed_units, bool *changed_mode,
             g_state.cfg.fahrenheit = !g_state.cfg.fahrenheit;
             *changed_units = true; *save = true;
             break;
+        case MENU_LANGUAGE:
+            g_state.cfg.lang = (g_state.cfg.lang + 1) % LANG_COUNT;
+            *save = true;
+            break;
         case MENU_MATTER_CODE:
             g_state.screen = UI_SCREEN_INFO;      /* show the payload detail */
             break;
@@ -490,10 +497,13 @@ static void handle_event(const app_event_t *e)
 
 static void build_model(ui_model_t *m)
 {
-    int mode, fan_speed, occ_source;
+    int mode, fan_speed, occ_source, lang;
     bool occ_home_pref;
     app_lock();
     bool occ_live = g_state.occupied;
+    m->lang           = g_state.cfg.lang;
+    m->identify       = g_state.identify_until_ms != 0 &&
+                        now_ms() < g_state.identify_until_ms;
     m->temp_c100      = g_state.temp_c100;
     m->humidity_pct100 = g_state.humidity_pct100;
     m->humidity_valid  = g_state.humidity_valid;
@@ -517,6 +527,7 @@ static void build_model(ui_model_t *m)
     fan_speed         = g_state.cfg.fan_speed;
     occ_source        = g_state.cfg.occ_source;
     occ_home_pref     = g_state.cfg.occ_manual_home;
+    lang              = g_state.cfg.lang;
     app_unlock();
 
     /* Matter setup payload — available whether or not we're commissioned, so
@@ -525,36 +536,44 @@ static void build_model(ui_model_t *m)
     if (s_code[0] == '\0') strncpy(s_code, "----", sizeof(s_code));
     m->pairing_code = s_code;
 
-    /* Settings-menu lines (LABEL: VALUE). PRESENCE shows the live resolved state
-     * (in sensor mode) or the manual preference (in manual mode). */
-    snprintf(s_menu_mode,   sizeof(s_menu_mode),   "MODE: %s", mode_name(mode));
-    snprintf(s_menu_fan,    sizeof(s_menu_fan),    "FAN: %s", fan_speed_name(fan_speed));
-    snprintf(s_menu_presence, sizeof(s_menu_presence), "PRESENCE: %s",
-             (occ_source == OCC_SRC_SENSOR ? m->occupied : occ_home_pref) ? "HOME" : "AWAY");
-    snprintf(s_menu_occsrc, sizeof(s_menu_occsrc), "OCC SRC: %s",
-             occ_source == OCC_SRC_SENSOR ? "SENSOR" : "MANUAL");
-    snprintf(s_menu_units,  sizeof(s_menu_units),  "UNITS: %s", m->fahrenheit ? "F" : "C");
+    /* Settings-menu lines (LABEL: VALUE) in the selected language. PRESENCE shows
+     * the live resolved state (sensor mode) or the manual preference. */
+    snprintf(s_menu_mode,   sizeof(s_menu_mode),   "%s: %s",
+             i18n(lang, STR_MODE), i18n(lang, mode_msg_id(mode)));
+    snprintf(s_menu_fan,    sizeof(s_menu_fan),    "%s: %s",
+             i18n(lang, STR_FAN), i18n(lang, fan_speed_msg(fan_speed)));
+    snprintf(s_menu_presence, sizeof(s_menu_presence), "%s: %s", i18n(lang, STR_PRESENCE),
+             i18n(lang, (occ_source == OCC_SRC_SENSOR ? m->occupied : occ_home_pref)
+                        ? STR_HOME : STR_AWAY));
+    snprintf(s_menu_occsrc, sizeof(s_menu_occsrc), "%s: %s", i18n(lang, STR_SOURCE),
+             i18n(lang, occ_source == OCC_SRC_SENSOR ? STR_SENSOR : STR_MANUAL));
+    snprintf(s_menu_units,  sizeof(s_menu_units),  "%s: %s",
+             i18n(lang, STR_UNITS), m->fahrenheit ? "F" : "C");
+    snprintf(s_menu_language, sizeof(s_menu_language), "%s: %s",
+             i18n(lang, STR_LANGUAGE), i18n_lang_name(lang));
+    snprintf(s_menu_code,   sizeof(s_menu_code),   "%s >", i18n(lang, STR_MATTER_CODE));
     s_menu_lines[MENU_MODE]        = s_menu_mode;
     s_menu_lines[MENU_FAN]         = s_menu_fan;
     s_menu_lines[MENU_PRESENCE]    = s_menu_presence;
     s_menu_lines[MENU_OCC_SRC]     = s_menu_occsrc;
     s_menu_lines[MENU_UNITS]       = s_menu_units;
-    s_menu_lines[MENU_MATTER_CODE] = "MATTER CODE >";
-    s_menu_lines[MENU_BACK]        = "BACK";
+    s_menu_lines[MENU_LANGUAGE]    = s_menu_language;
+    s_menu_lines[MENU_MATTER_CODE] = s_menu_code;
+    s_menu_lines[MENU_BACK]        = i18n(lang, STR_BACK);
     for (int i = 0; i < MENU_COUNT && i < UI_MENU_MAX; ++i) m->menu_lines[i] = s_menu_lines[i];
     m->menu_count = MENU_COUNT;
 
     /* Info screen (Settings → Matter code). */
-    m->info_title = "MATTER CODE";
+    m->info_title = i18n(lang, STR_MATTER_CODE);
     m->info_line1 = s_code;
-    m->info_line2 = "SCAN QR OR ENTER";
+    m->info_line2 = i18n(lang, STR_SCAN);
 
     /* BOOT long-press chooser (overrides the list fields while active). */
     if (m->screen == UI_SCREEN_CONFIRM) {
-        m->info_title = "BOOT OPTIONS";
-        s_menu_lines[BOOT_OPT_PAIRING] = "PAIRING";
-        s_menu_lines[BOOT_OPT_RESET]   = "FACTORY RESET";
-        s_menu_lines[BOOT_OPT_CANCEL]  = "CANCEL";
+        m->info_title = i18n(lang, STR_BOOT_OPTS);
+        s_menu_lines[BOOT_OPT_PAIRING] = i18n(lang, STR_PAIRING);
+        s_menu_lines[BOOT_OPT_RESET]   = i18n(lang, STR_FACTORY_RESET);
+        s_menu_lines[BOOT_OPT_CANCEL]  = i18n(lang, STR_CANCEL);
         for (int i = 0; i < BOOT_OPT_COUNT && i < UI_MENU_MAX; ++i)
             m->menu_lines[i] = s_menu_lines[i];
         m->menu_count = BOOT_OPT_COUNT;
@@ -645,6 +664,16 @@ static void ui_task(void *arg)
         }
         vTaskDelay(pdMS_TO_TICKS(20));
     }
+}
+
+/* Matter Identify -> show the IDENTIFY banner on the OLED for `seconds`.
+ * Called from the Matter identify callback (there is no status LED). */
+void app_on_identify(int seconds)
+{
+    if (seconds <= 0) seconds = 10;
+    app_lock();
+    g_state.identify_until_ms = now_ms() + (int64_t)seconds * 1000;
+    app_unlock();
 }
 
 /* ---- entry ---------------------------------------------------------------- */

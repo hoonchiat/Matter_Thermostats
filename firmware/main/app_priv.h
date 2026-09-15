@@ -28,6 +28,7 @@ typedef struct {
     int  min_on_s;
     int  hp_reversing;      /* thermo_hp_mode_t                  */
     int  brightness;        /* 0..255                            */
+    int  lang;              /* lang_t: 0=EN,1=FR,2=ES,3=DE       */
     int  fan_speed;         /* thermo_fan_speed_t: 0=auto,1=low,2=med,3=high */
     int  occ_source;        /* occ_source_t: 0=manual, 1=sensor  */
     bool occ_manual_home;   /* manual Home(true)/Away(false) pref */
@@ -54,6 +55,7 @@ typedef struct {
 
     bool commissioned;      /* Matter commissioned onto a fabric */
     int  thread_rssi;
+    int64_t identify_until_ms; /* show the IDENTIFY banner until this time (0 = off) */
 
     int  screen;            /* ui_screen_t                       */
     int  active_setpoint;   /* 0 = heat, 1 = cool                */
@@ -112,6 +114,7 @@ void app_matter_report_fan(int fan_speed);       /* Fan Control FanMode */
 void app_matter_report_occupancy(bool occupied); /* Occupancy Sensing */
 void app_matter_factory_reset(void);
 void app_matter_open_commissioning_window(void);  /* user-initiated pairing */
+void app_on_identify(int seconds);                /* Matter Identify -> OLED banner */
 void app_matter_get_pairing_code(char *out, int out_len);
 
 void app_control_start(void);              /* sensor + control + ui tasks */

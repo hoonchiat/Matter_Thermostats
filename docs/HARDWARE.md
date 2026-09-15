@@ -19,7 +19,6 @@ power, and the BOM. Machine-readable copies live in
    Encoder SW ──────────────────────────▶ GPIO2             │
    Push button ─────────────────────────▶ GPIO3             │
    Fan speed btn ───────────────────────▶ GPIO14            │
-   RGB status LED ◀──── RMT (GPIO8)                          │
    Relays W/Y/G/OB ◀── GPIO18/19/20/21 ─▶ [drivers] ─▶ 24VAC │
    BOOT/reset btn ──────────────────────▶ GPIO9             │
                        └─────────────────────────────────────┘
@@ -48,14 +47,12 @@ The ESP32-C6 GPIO matrix is flexible; the assignment below avoids the **strappin
 | **Relay O·B** (reversing valve) | GPIO21 | GPIO | OUT | Heat-pump only |
 | **Fan taps** G_LOW/MED/HIGH (opt.) | −1 | GPIO | OUT | Multi-speed blower; one-hot; disabled (−1) by default |
 | **Occupancy / PIR** (opt.) | −1 | GPIO | IN | Motion input; disabled (−1) = manual Home/Away only |
-| **Status RGB LED** | GPIO8* | RMT (WS2812) | OUT | On-board on DevKitC-1 (strapping — LED only) |
 | **Factory-reset button** | GPIO9* | GPIO | IN | Re-uses BOOT (strapping, pulled-up) |
 | **Console UART TX/RX** | GPIO16/17 | UART0 | — | Debug/log; keep free |
 | **USB D−/D+** | GPIO12/13 | USB-Serial-JTAG | — | Flash/monitor; keep free |
 
-`*` GPIO8 and GPIO9 are strapping pins; both are used here only in roles that tolerate it
-(a WS2812 output that is high-Z at reset, and a button that is externally pulled to the
-level BOOT expects). Do not repurpose them for peripherals that drive them at boot.
+`*` GPIO9 is a strapping pin, used here only for the BOOT button (externally pulled to the
+level the bootloader expects). Do not repurpose it for a peripheral that drives it at boot.
 
 These names are mirrored 1:1 in `firmware/main/Kconfig.projbuild` so every pin is a
 menuconfig option — change the board without touching code.
@@ -181,19 +178,20 @@ reaches the blower depends on the wiring, all firmware-selectable:
 During a heat/cool call the fan runs at the configured **call speed** (`THERMO_FAN_CALL_SPEED`,
 default High). A fixed Low/Med/High selection circulates continuously even when idle.
 
-## 7. Status LED
+## 7. Status indication (on the OLED — no LED)
 
-On-board addressable **WS2812** RGB (GPIO8, RMT-driven). Color/behavior encodes state:
+There is **no status LED**. The always-on OLED already conveys every state, so a discrete
+RGB LED would be redundant hardware; each state is shown on the display:
 
-| State | LED |
+| State | On-screen indication |
 |---|---|
-| Uncommissioned / pairing | slow blue pulse |
-| Joining Thread | blue blink |
-| Idle (connected, no call) | dim green |
-| Calling for heat | solid orange/red |
-| Calling for cool | solid cyan/blue |
-| Sensor/other fault | red blink |
-| Identify (Matter) | white blink |
+| Uncommissioned / pairing | **PAIRING** screen (QR box + manual code) |
+| Connected | filled link dot in the status bar (hollow ring when not) |
+| Idle (no call) | bottom-left running-state text: **IDLE** |
+| Calling for heat | **HEATING** + a filled dot in the setpoint pill; ▲ mode marker |
+| Calling for cool | **COOLING** + a filled dot in the setpoint pill; ▼ mode marker |
+| Sensor fault | full-screen **FAULT** screen (outputs forced off) |
+| Identify (Matter) | a centered **IDENTIFY** banner over the current screen |
 
 ## 8. Power
 
@@ -226,6 +224,5 @@ Summary — full list in [`hardware/bom.csv`](../hardware/bom.csv):
 | 2 | 4.7 kΩ resistor | I²C pull-ups |
 | 4 | Relay or opto-triac + driver | W/Y/G/O·B |
 | 4 | Flyback diode / snubber | per relay |
-| 1 | WS2812 RGB LED | status |
 | 1 | Power supply (USB-C and/or 24 VAC→5 V iso) | |
 | — | Decoupling caps, connectors, terminal blocks | |

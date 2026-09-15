@@ -23,6 +23,7 @@ firmware/
     ├── thermostat_core/      # mode/hysteresis/cycle-timer law    [implemented, pure]
     ├── relays/               # HVAC output driver + fan taps      [implemented]
     ├── occupancy/            # PIR + vacancy timeout / Home-Away  [implemented]
+    ├── i18n/                 # UI string catalog: EN/FR/ES/DE     [implemented, pure]
     └── ui_oled/              # SSD1306 screens + 5x7 font + menu   [implemented]
 ```
 
@@ -204,7 +205,8 @@ Fault). See [UI.md](UI.md).
 - **Pairing:** mirrors the esp-matter `light` example — `esp_matter::start(app_event_cb)`,
   `PrintOnboardingCodes(BLE)`, and re-open a DNS-SD commissioning window on last-fabric
   removal.
-- **Identify:** blink the status LED.
+- **Identify:** show a centered **IDENTIFY** banner on the OLED (`app_on_identify()`) —
+  there is no status LED.
 - Temperatures cross the boundary in Matter's units: **0.01 °C signed int16** for
   `LocalTemperature` and the setpoints.
 

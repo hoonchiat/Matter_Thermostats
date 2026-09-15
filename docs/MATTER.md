@@ -25,7 +25,7 @@ Provided by the stack. Key clusters:
 
 | Cluster | ID | Role |
 |---|---|---|
-| Identify | 0x0003 | locate device (blink LED) |
+| Identify | 0x0003 | locate device (shows an IDENTIFY banner on the OLED; no LED) |
 | **Thermostat** | 0x0201 | core function |
 | Thermostat User Interface Configuration | 0x0204 | display units, keypad lock |
 | Groups | 0x0004 | *(optional)* |

@@ -15,6 +15,7 @@ idf_component_register(
         relays
         ui_oled
         occupancy
+        i18n
         # ESP-IDF + Matter:
         nvs_flash
         esp_matter

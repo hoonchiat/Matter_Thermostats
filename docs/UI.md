@@ -73,7 +73,8 @@ Center / pill:
   degree mark.
 - **Setpoint pill**: the active target (`SET …`); in **Auto** the pill shows both, each with
   its ▲/▼ marker. A filled dot appears in the pill while heating or cooling is called.
-- **Running state** (bottom-left): `IDLE` / `HEATING` / `COOLING` / `FAN ON`, matching the LED.
+- **Running state** (bottom-left): `IDLE` / `HEATING` / `COOLING` / `FAN ON` (shown in the
+  selected language).
 - **Humidity** (bottom-right): relative humidity from the SHT40, e.g. `45%`; hidden only
   while a reading is unavailable (before the first sample or during a sensor fault).
   Units (°C/°F) and the **0.5°-per-step** setpoint adjust apply regardless of sensor.
@@ -108,8 +109,9 @@ the push button** to go back / close.
 | `MODE: HEAT/COOL/FAN/AUTO` | encoder-press cycles the operating mode Heat → Cool → Fan → Auto; mirrored to the Matter Thermostat `SystemMode`. (OFF is reachable via the push-button mode cycle.) | `mode` |
 | `FAN: AUTO/LOW/MED/HIGH` | encoder-press cycles the fan speed; mirrored to the Matter Fan Control `FanMode` attribute | `fan` |
 | `PRESENCE: HOME/AWAY` | encoder-press toggles Home/Away (manual); Away switches to the unoccupied setpoints. In `SENSOR` mode this sets the manual preference and the sensor resumes on the next motion | `occHome` |
-| `OCC SRC: MANUAL/SENSOR` | encoder-press chooses whether presence comes from the manual toggle or the PIR/occupancy sensor | `occSrc` |
+| `SOURCE: MANUAL/SENSOR` | encoder-press chooses whether presence comes from the manual toggle or the PIR/occupancy sensor | `occSrc` |
 | `UNITS: C/F` | encoder-press toggles °C ⇄ °F (also mirrors to the Matter `TemperatureDisplayMode` attribute) | `units` |
+| `LANGUAGE: …` | encoder-press cycles the UI language: **English → Français → Español → Deutsch**. All on-screen labels re-render immediately | `lang` |
 | `MATTER CODE >` | encoder-press opens the **INFO screen** showing the manual pairing code (the Matter setup payload number) | — |
 | `BACK` | return to Home | — |
 
@@ -126,6 +128,21 @@ a heat/cool call; `LOW/MED/HIGH` run it continuously at that speed (circulate).
 
 The selected row is drawn as an inverted (highlighted) bar. Changes are persisted to NVS
 immediately and, where relevant, pushed to Matter controllers.
+
+### Languages
+
+All on-screen labels are translated via the `i18n` component (`components/i18n`), selectable
+at runtime from **Settings → LANGUAGE**: **English, Français, Español, Deutsch**. Strings are
+ASCII so they render in the existing 5×7 font with no layout change — French/Spanish uppercase
+follow the usual convention of dropping accents, and German umlauts are transliterated
+(ae/oe/ue, ss). Numbers, the °C/°F unit letter, and the fan abbreviations (AU/LO/MD/HI) are
+language-neutral and stay as-is. The selected language persists in NVS (`lang`).
+
+### Identify (no status LED)
+
+There is no status RGB LED — the OLED is the single status surface (see
+[HARDWARE.md §7](HARDWARE.md#7-status-indication-on-the-oled--no-led)). A Matter **Identify**
+request shows a centered **IDENTIFY** banner over the current screen for a few seconds.
 
 ### Planned (hooks already in the config/NVS)
 
@@ -201,7 +218,8 @@ confirm; a short push (or ~15 s of inactivity) cancels back to Home.
 └────────────────────────────────────────────┘
 ```
 
-All HVAC outputs are forced off while a fault is active (FR-12); the status LED blinks red.
+All HVAC outputs are forced off while a fault is active (FR-12); the full-screen fault
+message is the fault indication (there is no status LED).
 
 ## 8. Rendering notes
 

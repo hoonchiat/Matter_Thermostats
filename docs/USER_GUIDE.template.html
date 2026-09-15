@@ -184,6 +184,7 @@ footer .mono{color:var(--muted)}
         <span class="chip">Home / Away</span>
         <span class="chip">°C / °F</span>
         <span class="chip">Temp + Humidity</span>
+        <span class="chip">EN / FR / ES / DE</span>
       </div>
     </div>
     <figure class="hero-screen screen-fig">
@@ -220,7 +221,9 @@ footer .mono{color:var(--muted)}
         Google&nbsp;Home, Alexa, SmartThings or Home&nbsp;Assistant.</p>
         <p>It uses a <b>Sensirion SHT40</b> sensor, so it measures both <b>temperature</b> and
         <b>relative humidity</b>. The humidity is shown on the home screen and published as a
-        Matter humidity sensor.</p>
+        Matter humidity sensor. The on-screen text is available in <b>English, French, Spanish
+        and German</b> (Settings → Language), and all status is shown on the display — there is
+        no status light.</p>
       </section>
 
       <section id="controls">
@@ -335,7 +338,7 @@ footer .mono{color:var(--muted)}
         <h2>Sensor fault</h2>
         <p class="lead">If the temperature sensor reads open or shorted, the thermostat shows a fault
         screen and — for safety — switches <b>all heating and cooling off</b> until the sensor
-        recovers. The status LED blinks red.</p>
+        recovers.</p>
         <div class="gallery" id="fault-gallery"></div>
       </section>
 
@@ -367,8 +370,9 @@ footer .mono{color:var(--muted)}
             <tr><td><span class="k">MODE</span></td><td>Heat · Cool · Fan · Auto</td><td>Operating mode; mirrors to your smart-home app. (Off is set via the button.)</td></tr>
             <tr><td><span class="k">FAN</span></td><td>Auto · Low · Med · High</td><td>Auto runs the fan only during a heat/cool call; a fixed speed circulates continuously.</td></tr>
             <tr><td><span class="k">PRESENCE</span></td><td>Home · Away</td><td>Away switches to the unoccupied (setback) setpoints.</td></tr>
-            <tr><td><span class="k">OCC SRC</span></td><td>Manual · Sensor</td><td>Whether Home/Away comes from the toggle or a motion/occupancy sensor.</td></tr>
+            <tr><td><span class="k">SOURCE</span></td><td>Manual · Sensor</td><td>Whether Home/Away comes from the toggle or a motion/occupancy sensor.</td></tr>
             <tr><td><span class="k">UNITS</span></td><td>°C · °F</td><td>Display units. The setpoint step stays 0.5°.</td></tr>
+            <tr><td><span class="k">LANGUAGE</span></td><td>EN · FR · ES · DE</td><td>On-screen language: English, Français, Español, Deutsch.</td></tr>
             <tr><td><span class="k">MATTER CODE</span></td><td>view</td><td>Shows the manual pairing code full-screen.</td></tr>
             <tr><td><span class="k">BACK</span></td><td>—</td><td>Return to the home screen.</td></tr>
           </tbody>
@@ -390,16 +394,17 @@ footer .mono{color:var(--muted)}
             <tr><td>BOOT long (10s)</td><td colspan="2">Open chooser: Pairing or Factory reset</td></tr>
           </tbody>
         </table></div>
-        <h3>Status LED</h3>
+        <h3>Status — all on the screen</h3>
+        <p class="lead">There's no status light. The display shows everything at a glance:</p>
         <div class="tablewrap"><table>
-          <thead><tr><th>Colour</th><th>Meaning</th></tr></thead>
+          <thead><tr><th>State</th><th>On the screen</th></tr></thead>
           <tbody>
-            <tr><td><span class="dot" style="background:#3aa0ff"></span>Blue pulse</td><td>Waiting to be paired</td></tr>
-            <tr><td><span class="dot" style="background:#3aa0ff"></span>Blue blink</td><td>Joining Thread</td></tr>
-            <tr><td><span class="dot" style="background:#37c26a"></span>Dim green</td><td>Connected, idle</td></tr>
-            <tr><td><span class="dot" style="background:#e2601f"></span>Orange</td><td>Calling for heat</td></tr>
-            <tr><td><span class="dot" style="background:#22b6d6"></span>Cyan</td><td>Calling for cool</td></tr>
-            <tr><td><span class="dot" style="background:#e23b3b"></span>Red blink</td><td>Sensor fault</td></tr>
+            <tr><td>Waiting to be paired</td><td>The <b>Pairing</b> screen (QR + code)</td></tr>
+            <tr><td>Connected</td><td>Filled link dot in the top-right</td></tr>
+            <tr><td>Idle</td><td>Bottom-left reads <b>IDLE</b></td></tr>
+            <tr><td>Calling for heat / cool</td><td><b>HEATING</b> / <b>COOLING</b> + a filled dot in the target pill</td></tr>
+            <tr><td>Sensor fault</td><td>Full-screen <b>fault</b> message; heating/cooling off</td></tr>
+            <tr><td>Locate (from the app)</td><td>A centered <b>IDENTIFY</b> banner</td></tr>
           </tbody>
         </table></div>
       </section>
@@ -428,6 +433,7 @@ const META = {
   menu_gallery: [
     ["menu_top","Settings","Top of the list","<li>Open with a <b>long button press</b>. The highlighted row is inverted.</li><li><b>MODE</b> is first — press to cycle Heat → Cool → Fan → Auto.</li><li>Turn the dial to move; <b>press</b> the dial to change the highlighted item.</li>"],
     ["menu_scroll","Settings","Scrolled down","<li>The list keeps the selection centred as you scroll.</li><li>A scrollbar on the right appears when the list is longer than the screen.</li><li>Short-press the button to go back to Home.</li>"],
+    ["menu_fr","Settings","Another language","<li>Settings → <b>LANGUAGE</b> switches the whole UI: English, Français, Español, Deutsch.</li><li>Shown here in French — the title and every row translate immediately.</li><li>The choice is remembered across power cycles.</li>"],
   ],
   pairing_gallery: [
     ["pairing","Pairing","Before it's added","<li>Shown automatically until the thermostat is added to a home.</li><li>Scan the <b>QR</b> or type the code; needs a Thread border router on the network.</li><li>Settings stay reachable so you can set the mode or units before pairing.</li>"],
@@ -435,7 +441,7 @@ const META = {
     ["boot_menu","BOOT options","Hold BOOT ≥10 s","<li>Holding the recessed <b>BOOT</b> button for 10 seconds opens this chooser.</li><li><b>Pairing</b> re-opens the commissioning window so a controller can add the device.</li><li><b>Factory reset</b> erases the pairing and Thread network. Turn to pick, press to confirm; <b>Cancel</b> (or wait) backs out.</li>"],
   ],
   fault_gallery: [
-    ["fault","Fault","Open / short sensor","<li>Shown when the temperature sensor reads open or shorted.</li><li>All heating and cooling are switched <b>off</b> for safety.</li><li>The status LED blinks red; the screen clears once the sensor recovers.</li>"],
+    ["fault","Fault","Sensor fault","<li>Shown when the SHT40 sensor can't be read.</li><li>All heating and cooling are switched <b>off</b> for safety.</li><li>The screen clears once the sensor recovers.</li>"],
   ],
 };
 

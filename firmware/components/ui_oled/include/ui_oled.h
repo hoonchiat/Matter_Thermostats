@@ -45,6 +45,8 @@ typedef struct {
     bool  humidity_valid;   /* show humidity? (SHT40 present) */
     bool  fault;
     bool  commissioned;     /* Matter commissioned?                              */
+    bool  identify;         /* Matter Identify active -> show a banner            */
+    int   lang;             /* lang_t: 0=EN,1=FR,2=ES,3=DE                        */
     int   thread_rssi;      /* dBm, for the signal glyph (0 if unknown)          */
     int   active_setpoint;  /* 0 = heat, 1 = cool (which one ADJUST edits)        */
     const char *pairing_code;   /* Matter manual pairing code (PAIRING/INFO)     */

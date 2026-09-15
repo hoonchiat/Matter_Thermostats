@@ -4,6 +4,7 @@
  * this "thermo_cfg" namespace.
  */
 #include "app_priv.h"
+#include "i18n.h"
 
 #include "esp_log.h"
 #include "nvs_flash.h"
@@ -28,6 +29,7 @@ void app_config_defaults(app_config_t *cfg)
     cfg->min_on_s      = CONFIG_THERMO_MIN_ON_S;
     cfg->hp_reversing  = THERMO_HP_NONE;
     cfg->brightness    = 200;
+    cfg->lang          = LANG_EN;
     cfg->fan_speed     = THERMO_FAN_AUTO;
 #if CONFIG_THERMO_OCC_SOURCE_SENSOR
     cfg->occ_source    = OCC_SRC_SENSOR;
@@ -69,6 +71,7 @@ int app_nvs_load(app_config_t *cfg)
     get_i32(h, "min_on",   &cfg->min_on_s);
     get_i32(h, "hp",       &cfg->hp_reversing);
     get_i32(h, "bright",   &cfg->brightness);
+    get_i32(h, "lang",     &cfg->lang);
     get_i32(h, "fan",      &cfg->fan_speed);
     get_i32(h, "occSrc",   &cfg->occ_source);
     get_u8b(h, "occHome",  &cfg->occ_manual_home);
@@ -95,6 +98,7 @@ int app_nvs_save(const app_config_t *cfg)
     nvs_set_i32(h, "min_on",   cfg->min_on_s);
     nvs_set_i32(h, "hp",       cfg->hp_reversing);
     nvs_set_i32(h, "bright",   cfg->brightness);
+    nvs_set_i32(h, "lang",     cfg->lang);
     nvs_set_i32(h, "fan",      cfg->fan_speed);
     nvs_set_i32(h, "occSrc",   cfg->occ_source);
     nvs_set_u8 (h, "occHome",  cfg->occ_manual_home ? 1 : 0);

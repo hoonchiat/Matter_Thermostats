@@ -73,16 +73,29 @@ int main(void)
     m.screen = UI_SCREEN_ADJUST; m.mode = 1; m.active_setpoint = 0;
     ui_oled_render(&m); dump("adjust");
 
-    /* MENU — top (MODE selected) */
+    /* MENU — English (MODE selected) */
     {
         static const char *lines[] = { "MODE: AUTO", "FAN: AUTO", "PRESENCE: HOME",
-                                       "OCC SRC: SENSOR", "UNITS: C", "MATTER CODE >", "BACK" };
-        for (int i = 0; i < 7; ++i) m.menu_lines[i] = lines[i];
-        m.menu_count = 7;
+                                       "SOURCE: SENSOR", "UNITS: C", "LANGUAGE: ENGLISH",
+                                       "MATTER CODE >", "BACK" };
+        for (int i = 0; i < 8; ++i) m.menu_lines[i] = lines[i];
+        m.menu_count = 8;
         m.screen = UI_SCREEN_MENU; m.menu_index = 0;
         ui_oled_render(&m); dump("menu_top");
-        m.menu_index = 5;   /* scrolled: MATTER CODE row selected */
+        m.menu_index = 5;   /* scrolled: LANGUAGE row selected */
         ui_oled_render(&m); dump("menu_scroll");
+    }
+
+    /* MENU — French, to show the language selector (title auto-translates). */
+    {
+        static const char *lines[] = { "MODE: AUTO", "VENTILO: AUTO", "PRESENCE: PRESENT",
+                                       "SOURCE: CAPTEUR", "UNITES: C", "LANGUE: FRANCAIS",
+                                       "CODE MATTER >", "RETOUR" };
+        for (int i = 0; i < 8; ++i) m.menu_lines[i] = lines[i];
+        m.menu_count = 8;
+        m.lang = LANG_FR; m.screen = UI_SCREEN_MENU; m.menu_index = 5;
+        ui_oled_render(&m); dump("menu_fr");
+        m.lang = LANG_EN;
     }
 
     /* INFO — Matter pairing code */

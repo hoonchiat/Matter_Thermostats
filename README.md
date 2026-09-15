@@ -19,7 +19,8 @@ cloud, no vendor lock-in, all local control over a Thread mesh.
 > button input), a modern OLED UI (5×7 font, status bar with mode/fan/link icons, rounded
 > setpoint pill; home/adjust/menu/info/pairing/fault screens — previewable on a host PC), the
 > local **settings menu** (mode Heat/Cool/Fan/Auto, fan Auto/Low/Med/High, Home/Away presence
-> + source, °C/°F, Matter pairing code), **occupancy** (PIR sensor or manual toggle; Matter OCC feature with
+> + source, °C/°F, **UI language EN/FR/ES/DE**, Matter pairing code), all device status on the
+> OLED (no LED), **occupancy** (PIR sensor or manual toggle; Matter OCC feature with
 > separate unoccupied setpoints), and full **remote override from Matter** of mode, setpoints
 > and fan speed. Commissioning mirrors the esp-matter `light` example. The Matter endpoint wiring
 > is laid out with clearly marked integration points against the installed SDK version. See
@@ -42,6 +43,8 @@ cloud, no vendor lock-in, all local control over a Thread mesh.
 | **Fan control** | Auto / Low / Med / High — dedicated button, settings menu, and remote (Matter Fan Control cluster) |
 | **Occupancy** | PIR/occupancy sensor **or** manual Home/Away toggle; Matter OCC feature with separate unoccupied setpoints; published as a Matter Occupancy Sensor |
 | **Modes** | Off / Heat / Cool / Auto / Fan-only (Honeywell-Home-style UX) |
+| **Languages** | On-screen UI in **English / Français / Español / Deutsch** (runtime-selectable) |
+| **Status** | Shown entirely on the OLED — pairing, heat/cool call, idle, fault, Matter Identify (no status LED) |
 | **Power** | USB-C 5 V (bench) or 24 VAC → 5 V (field install) |
 | **Framework** | ESP-IDF v5.x + ESP-Matter |
 
@@ -76,6 +79,7 @@ Matter_Thermostats/
         ├── relays/           # W/Y/G/O·B HVAC output driver (implemented)
         ├── thermostat_core/  # hysteresis + cycle-protection control (implemented)
         ├── occupancy/        # PIR sensor + vacancy timeout / manual Home-Away (implemented)
+        ├── i18n/             # UI string catalog: EN/FR/ES/DE (implemented)
         └── ui_oled/          # SSD1306 screen manager + 5x7 font + settings menu (implemented)
 ```
 

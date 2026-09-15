@@ -64,9 +64,6 @@ menu "Matter Thermostat"
                 Optional. A motion/occupancy sensor input. Leave at -1 to use the
                 manual Home/Away toggle in the settings menu instead.
 
-        config THERMO_PIN_STATUS_LED
-            int "Status RGB LED (WS2812) GPIO"
-            default 8
         config THERMO_PIN_RESET_BTN
             int "Factory-reset button GPIO (BOOT)"
             default 9

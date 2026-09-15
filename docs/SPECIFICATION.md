@@ -62,12 +62,12 @@ If the true intent was a **color 0.95″ SSD1331** display, only the display tra
                  ┌──────────────────────────────────────────────────┐
                  │                    ESP32-C6                        │
                  │ I2C0 (SDA/SCL) ─ SHT40 (temp+RH) + SSD1306 OLED  │
+                 │                  (OLED is the only status surface)│
                  │                                                   │
                  │ PCNT ─────────── Rotary encoder A/B               │
                  │ GPIO ─────────── Encoder switch + Push button     │
                  │                                                   │
                  │ GPIO ×4 ──────── Relay drivers  W / Y / G / O·B ──┼──▶ 24VAC HVAC
-                 │ RMT  ─────────── Status RGB LED (WS2812)          │
                  │                                                   │
                  │ 802.15.4 radio ─ Thread mesh  ◀── Border Router  │
                  │ BLE ──────────── Commissioning only              │
@@ -81,7 +81,8 @@ If the true intent was a **color 0.95″ SSD1331** display, only the display tra
                 ├ thermostat_core: mode/hysteresis/cycle-timer control law
                 ├ ui_oled: screen state machine & rendering
    Domain       ├ matter data-model glue (endpoint/cluster ↔ app state)
-   Drivers      ├ sht4x · rotary_encoder · button · relays · status LED
+   Domain       ├ i18n: UI string catalog (EN/FR/ES/DE)
+   Drivers      ├ sht4x · rotary_encoder · button · relays
    Middleware   ├ ESP-Matter (Data Model, Interaction Model)
                 ├ CHIP / connectedhomeip stack
    Network      ├ OpenThread (802.15.4) · mDNS/SRP · BLE (commissioning)
@@ -115,6 +116,8 @@ See [FIRMWARE.md](FIRMWARE.md) for tasks, queues, and the control algorithm, and
 | FR-16 | Support **occupancy** via a PIR/occupancy sensor (with a vacancy timeout) **or** a manual Home/Away toggle (selectable). Use the Matter Thermostat **OCC feature** with separate **unoccupied setpoints** (writable remotely and locally); publish the resolved presence via the `Occupancy` attribute and an Occupancy Sensor endpoint. |
 | FR-17 | Use a **Sensirion SHT40** I²C room sensor for temperature **+ relative humidity**; show humidity on the OLED and expose it as a Matter Humidity Sensor. Units (°C/°F) and the 0.5°-per-step setpoint adjust apply. |
 | FR-18 | Provide a settings-menu **MODE** selector — Heat / Cool / Fan-only / Auto — in addition to the push-button mode cycle (which also includes Off). |
+| FR-19 | Provide a settings-menu **LANGUAGE** selector for the on-screen UI — **English, French, Spanish, German** — persisted across reboots. |
+| FR-20 | Convey all device status on the OLED (pairing, heat/cool call, idle, sensor fault, Matter Identify); no status LED. |
 
 ## 5. Non-functional requirements
 
@@ -143,7 +146,8 @@ Full detail in [HARDWARE.md](HARDWARE.md). Headlines:
 - **Output:** 4× relay or SSR channels with flyback/snubber, opto-isolation recommended
   for 24 VAC.
 - **Power:** USB-C (5 V) for bench; on-board 24 VAC→5 V (isolated) + 3.3 V rail for field.
-- **Status:** on-board addressable RGB LED (WS2812) for at-a-glance state.
+- **Status:** shown entirely on the OLED (pairing, heat/cool call, idle, fault, identify);
+  there is no status LED.
 
 ## 7. Temperature (& humidity) sensing
 
@@ -228,7 +232,7 @@ synchronization rules are in [MATTER.md](MATTER.md).
 ## 11. Persistence
 
 NVS namespace `thermo_cfg` stores: `mode`, `heat`, `cool`, `deadband`,
-`offset`, `units_f`, `min_off`, `min_on`, `hp`, `bright`, `fan`
+`offset`, `units_f`, `lang`, `min_off`, `min_on`, `hp`, `bright`, `fan`
 (fan speed), `occSrc`/`occHome` (occupancy source + manual Home/Away), and `uHeat`/`uCool`
 (unoccupied setpoints). Matter's own fabric/credential storage is separate (managed by the stack).
 
