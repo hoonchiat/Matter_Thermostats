@@ -46,6 +46,12 @@ enum {
     MENU_COUNT,
 };
 
+/* BOOT long-press chooser (UI_SCREEN_CONFIRM) items (order = on-screen order). */
+enum { BOOT_OPT_PAIRING = 0, BOOT_OPT_RESET, BOOT_OPT_CANCEL, BOOT_OPT_COUNT };
+
+/* Auto-dismiss the BOOT chooser back to HOME after this idle time. */
+#define BOOT_MENU_TIMEOUT_MS 15000
+
 static const char *fan_speed_name(int s)
 {
     switch (s) {
@@ -364,6 +370,7 @@ static void handle_event(const app_event_t *e)
 {
     bool changed_setpoints = false, changed_unocc = false, changed_mode = false;
     bool changed_units = false, changed_sensor = false, changed_fan = false, save = false;
+    int  boot_action = -1;   /* BOOT chooser selection to act on after unlock */
 
     app_lock();
     int scr = g_state.screen;
@@ -372,6 +379,10 @@ static void handle_event(const app_event_t *e)
             if (scr == UI_SCREEN_MENU) {
                 int n = MENU_COUNT;
                 g_state.menu_index = ((g_state.menu_index + e->value) % n + n) % n;
+            } else if (scr == UI_SCREEN_CONFIRM) {
+                int n = BOOT_OPT_COUNT;
+                g_state.menu_index = ((g_state.menu_index + e->value) % n + n) % n;
+                s_last_adjust_ms = now_ms();   /* keep the chooser awake */
             } else if (scr == UI_SCREEN_INFO) {
                 /* no rotation action on the info screen */
             } else {
@@ -382,7 +393,10 @@ static void handle_event(const app_event_t *e)
             break;
 
         case EVT_ENC_SW_SHORT:                     /* select / confirm */
-            if (scr == UI_SCREEN_MENU) {
+            if (scr == UI_SCREEN_CONFIRM) {
+                boot_action = g_state.menu_index;  /* acted on after unlock */
+                if (boot_action == BOOT_OPT_CANCEL) g_state.screen = UI_SCREEN_HOME;
+            } else if (scr == UI_SCREEN_MENU) {
                 menu_activate(&changed_units, &changed_sensor, &changed_fan, &save);
             } else if (scr == UI_SCREEN_INFO) {
                 g_state.screen = UI_SCREEN_MENU;   /* back to the list */
@@ -396,15 +410,16 @@ static void handle_event(const app_event_t *e)
         case EVT_BTN_MODE_SHORT:                   /* mode cycle, or back */
             if (scr == UI_SCREEN_INFO) {
                 g_state.screen = UI_SCREEN_MENU;
-            } else if (scr == UI_SCREEN_MENU) {
-                g_state.screen = UI_SCREEN_HOME;
+            } else if (scr == UI_SCREEN_MENU || scr == UI_SCREEN_CONFIRM) {
+                g_state.screen = UI_SCREEN_HOME;   /* short press cancels the chooser */
             } else {
                 cycle_mode(); changed_mode = true; save = true;
             }
             break;
 
         case EVT_BTN_MENU_LONG:                    /* open / close settings */
-            if (scr == UI_SCREEN_MENU || scr == UI_SCREEN_INFO) {
+            if (scr == UI_SCREEN_MENU || scr == UI_SCREEN_INFO ||
+                scr == UI_SCREEN_CONFIRM) {
                 g_state.screen = UI_SCREEN_HOME;
             } else {
                 g_state.screen = UI_SCREEN_MENU;
@@ -423,11 +438,11 @@ static void handle_event(const app_event_t *e)
             g_state.screen = UI_SCREEN_HOME;
             break;
 
-        case EVT_RESET_LONG:
-            app_unlock();
-            ESP_LOGW(TAG, "factory reset requested");
-            app_matter_factory_reset();
-            return;
+        case EVT_RESET_LONG:                       /* BOOT held 10 s -> chooser */
+            g_state.screen = UI_SCREEN_CONFIRM;
+            g_state.menu_index = BOOT_OPT_PAIRING;
+            s_last_adjust_ms = now_ms();           /* arms the chooser timeout */
+            break;
 
         case EVT_MATTER_SET_MODE:
             g_state.cfg.mode = e->value; save = true; break;
@@ -460,6 +475,19 @@ static void handle_event(const app_event_t *e)
     if (changed_fan)       app_matter_report_fan(snapshot.fan_speed);
     if (changed_sensor)    thermistor_set_type((ntc_type_t)snapshot.ntc_type);
     if (save)              app_nvs_save(&snapshot);
+
+    /* BOOT chooser actions run outside the state lock (they open the Matter
+     * commissioning window or reboot). */
+    if (boot_action == BOOT_OPT_PAIRING) {
+        ESP_LOGW(TAG, "pairing: opening commissioning window");
+        app_matter_open_commissioning_window();
+        app_lock();
+        g_state.screen = UI_SCREEN_PAIRING;   /* show the code while the window is open */
+        app_unlock();
+    } else if (boot_action == BOOT_OPT_RESET) {
+        ESP_LOGW(TAG, "factory reset requested");
+        app_matter_factory_reset();           /* clears fabrics + Thread creds, reboots */
+    }
 }
 
 /* ---- UI task -------------------------------------------------------------- */
@@ -529,6 +557,17 @@ static void build_model(ui_model_t *m)
     m->info_title = "MATTER CODE";
     m->info_line1 = s_code;
     m->info_line2 = "SCAN QR OR ENTER";
+
+    /* BOOT long-press chooser (overrides the list fields while active). */
+    if (m->screen == UI_SCREEN_CONFIRM) {
+        m->info_title = "BOOT OPTIONS";
+        s_menu_lines[BOOT_OPT_PAIRING] = "PAIRING";
+        s_menu_lines[BOOT_OPT_RESET]   = "FACTORY RESET";
+        s_menu_lines[BOOT_OPT_CANCEL]  = "CANCEL";
+        for (int i = 0; i < BOOT_OPT_COUNT && i < UI_MENU_MAX; ++i)
+            m->menu_lines[i] = s_menu_lines[i];
+        m->menu_count = BOOT_OPT_COUNT;
+    }
 }
 
 static void ui_task(void *arg)
@@ -547,11 +586,11 @@ static void ui_task(void *arg)
     s_btn_q = xQueueCreate(8, sizeof(button_event_t));
     button_init(s_btn_q);
     button_cfg_t b_push  = { .gpio = CONFIG_THERMO_PIN_BTN_PUSH, .id = BTN_ID_PUSH,
-                             .active_low = true, .long_press_ms = 3000 };
+                             .active_low = true, .long_press_ms = 5000 };
     button_cfg_t b_encsw = { .gpio = CONFIG_THERMO_PIN_ENC_SW, .id = BTN_ID_ENC_SW,
                              .active_low = true, .long_press_ms = 1000 };
     button_cfg_t b_reset = { .gpio = CONFIG_THERMO_PIN_RESET_BTN, .id = BTN_ID_RESET,
-                             .active_low = true, .long_press_ms = 5000 };
+                             .active_low = true, .long_press_ms = 10000 };
     button_add(&b_push);
     button_add(&b_encsw);
     button_add(&b_reset);
@@ -595,10 +634,13 @@ static void ui_task(void *arg)
             handle_event(&e);
         }
 
-        /* ADJUST auto-timeout back to HOME. */
+        /* ADJUST / BOOT-chooser auto-timeout back to HOME. */
         app_lock();
         if (g_state.screen == UI_SCREEN_ADJUST &&
             (now_ms() - s_last_adjust_ms) > CONFIG_THERMO_ADJUST_TIMEOUT_MS) {
+            g_state.screen = UI_SCREEN_HOME;
+        } else if (g_state.screen == UI_SCREEN_CONFIRM &&
+                   (now_ms() - s_last_adjust_ms) > BOOT_MENU_TIMEOUT_MS) {
             g_state.screen = UI_SCREEN_HOME;
         }
         app_unlock();

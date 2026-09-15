@@ -51,6 +51,16 @@ int main(void)
     /* Running state (bottom-left) still renders regardless. */
     CHECK(lit_pixels(0, Y0, 50, Y1) > 0, "running-state text present");
 
+    /* BOOT long-press chooser renders its option list. */
+    ui_model_t c = {0};
+    c.commissioned = true; c.screen = UI_SCREEN_CONFIRM;
+    c.info_title = "BOOT OPTIONS";
+    const char *boot_lines[] = { "PAIRING", "FACTORY RESET", "CANCEL" };
+    for (int i = 0; i < 3; ++i) c.menu_lines[i] = boot_lines[i];
+    c.menu_count = 3; c.menu_index = 0;
+    ui_oled_render(&c);
+    CHECK(lit_pixels(0, 12, 127, 52) > 0, "CONFIRM: boot options rendered");
+
     printf(fails ? "\n%d FAILURE(S)\n" : "\nALL UI TESTS PASSED\n", fails);
     return fails ? 1 : 0;
 }

@@ -410,6 +410,27 @@ static void render_fault(const ui_model_t *m)
     draw_text(2, 40, "OUTPUTS DISABLED", 1);
 }
 
+/* Selection dialog: a title, a short list of options (menu_lines) with the
+ * highlighted one inverted, and a hint line. Used for the BOOT long-press
+ * "Pairing / Factory reset" chooser. */
+static void render_confirm(const ui_model_t *m)
+{
+    draw_text(2, 0, m->info_title ? m->info_title : "SELECT", 1);
+    fb_hline(0, s.cfg.width - 1, 10, true);
+
+    for (int i = 0; i < m->menu_count && i < UI_MENU_MAX; ++i) {
+        int y = 16 + i * 12;
+        const char *txt = m->menu_lines[i] ? m->menu_lines[i] : "";
+        if (i == m->menu_index) {
+            fb_fill_rect(0, y - 1, s.cfg.width, 11, true);
+            draw_text_inv(6, y, txt, 1);
+        } else {
+            draw_text(6, y, txt, 1);
+        }
+    }
+    draw_text(2, 56, "TURN:SEL  PRESS:OK", 1);
+}
+
 /* ---- public API ---------------------------------------------------------- */
 
 int ui_oled_init(const ui_oled_config_t *cfg)
@@ -493,6 +514,7 @@ void ui_oled_render(const ui_model_t *m)
         case UI_SCREEN_INFO:    render_info(m);    break;
         case UI_SCREEN_PAIRING: render_pairing(m); break;
         case UI_SCREEN_FAULT:   render_fault(m);   break;
+        case UI_SCREEN_CONFIRM: render_confirm(m); break;
     }
     fb_flush();
 }

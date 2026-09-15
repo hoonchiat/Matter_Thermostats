@@ -198,7 +198,9 @@ Self-heating is negligible: with `R_fix` = 10 kΩ the NTC dissipates ≲ 0.3 mW.
   press cycles the fan speed **Auto → Low → Med → High → Auto**; the new speed shows in the
   OLED status bar and mirrors to the Matter Fan Control cluster. Leave the pin at −1 to use
   only the settings menu / Matter for fan control.
-- **BOOT/reset button:** doubles as the factory-reset input (long-press).
+- **BOOT/reset button:** held **≥ 10 s** it opens an on-screen chooser — **Pairing**
+  (re-open the Matter commissioning window) or **Factory reset** — rather than resetting
+  immediately.
 - **Occupancy / PIR sensor (optional):** a digital motion output (e.g. HC-SR501, AM312, or
   a PIR module) on `CONFIG_THERMO_PIN_OCCUPANCY`. Active-high by default (idle low, high on
   motion); the firmware enables the opposite internal pull so an unconnected pin reads "no

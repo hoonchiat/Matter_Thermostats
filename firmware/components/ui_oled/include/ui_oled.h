@@ -25,6 +25,7 @@ typedef enum {
     UI_SCREEN_INFO,      /* Matter payload detail (from the menu) */
     UI_SCREEN_PAIRING,
     UI_SCREEN_FAULT,
+    UI_SCREEN_CONFIRM,   /* selection dialog (e.g. BOOT: Pairing / Factory reset) */
 } ui_screen_t;
 
 /* The complete view-model the renderer needs; app fills this each redraw. */

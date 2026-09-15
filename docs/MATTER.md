@@ -302,8 +302,18 @@ All remote writes are persisted to NVS so an override survives a reboot.
 
 ---
 
-## 7. Factory reset / decommission
+## 7. Local pairing / factory reset (BOOT chooser)
 
-Local long-press (BOOT ≥ 5 s, confirmed on OLED) removes all fabrics and Thread
-credentials and returns to step 1 above. Controllers should also be told to "remove" the
-device to clean up their side.
+Holding **BOOT ≥ 10 s** opens an on-screen chooser instead of resetting immediately:
+
+- **Pairing** → `app_matter_open_commissioning_window()` opens a basic commissioning window
+  (BLE + DNS-SD, 5 min) via the Administrator Commissioning path, so a controller can
+  commission the device — or add itself as another admin if it is already commissioned. This
+  is the local trigger for the multi-admin flow in §5.
+- **Factory reset** → `esp_matter::factory_reset()` removes all fabrics and Thread
+  credentials and returns to step 1 of the commissioning flow. Controllers should also be
+  told to "remove" the device to clean up their side.
+
+Rotate the encoder to select and press to confirm; a short push or ~15 s of inactivity
+cancels. (Both actions are also reachable remotely — Administrator Commissioning to open a
+window, or removing the last fabric to decommission.)

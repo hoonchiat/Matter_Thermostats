@@ -228,7 +228,7 @@ footer .mono{color:var(--muted)}
         <h2>The dial and the button</h2>
         <p class="lead">The rotary dial (turn and press) and the push button do most things,
         with a dedicated fan-speed button alongside them. A fourth button — the recessed
-        <span class="k">BOOT</span> — is used only for a factory reset.</p>
+        <span class="k">BOOT</span> — opens a pairing / factory-reset chooser when held.</p>
         <div class="controls">
           <div class="ctl">
             <div class="ic" aria-hidden="true">
@@ -247,7 +247,7 @@ footer .mono{color:var(--muted)}
             <h3>Push button</h3>
             <dl>
               <dt>Short</dt><dd>Cycle mode: Off → Heat → Cool → Auto. In a menu, go back.</dd>
-              <dt>Long ≥3s</dt><dd>Open the Settings menu.</dd>
+              <dt>Long ≥5s</dt><dd>Open the Settings menu.</dd>
             </dl>
           </div>
           <div class="ctl">
@@ -263,9 +263,9 @@ footer .mono{color:var(--muted)}
             <div class="ic" aria-hidden="true">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 4v7"/><path d="M6.3 6.6a8 8 0 1 0 11.4 0"/></svg>
             </div>
-            <h3>Reset (BOOT)</h3>
+            <h3>BOOT button</h3>
             <dl>
-              <dt>Long ≥5s</dt><dd>Factory reset — removes Matter pairing after an on-screen confirm.</dd>
+              <dt>Long ≥10s</dt><dd>Open a chooser: <b>Pairing</b> (re-open commissioning) or <b>Factory reset</b>. Turn to pick, press to confirm.</dd>
             </dl>
           </div>
         </div>
@@ -385,9 +385,9 @@ footer .mono{color:var(--muted)}
             <tr><td>Dial turn</td><td>Adjust setpoint ±0.5°</td><td>Move highlight</td></tr>
             <tr><td>Dial press</td><td>Switch active setpoint (Auto)</td><td>Change / open item</td></tr>
             <tr><td>Button short</td><td>Cycle mode</td><td>Back</td></tr>
-            <tr><td>Button long (3s)</td><td>Open Settings</td><td>Exit to Home</td></tr>
+            <tr><td>Button long (5s)</td><td>Open Settings</td><td>Exit to Home</td></tr>
             <tr><td>Fan button</td><td colspan="2">Cycle fan speed: Auto → Low → Med → High (any screen)</td></tr>
-            <tr><td>BOOT long (5s)</td><td colspan="2">Factory reset (with confirmation)</td></tr>
+            <tr><td>BOOT long (10s)</td><td colspan="2">Open chooser: Pairing or Factory reset</td></tr>
           </tbody>
         </table></div>
         <h3>Status LED</h3>
@@ -432,6 +432,7 @@ const META = {
   pairing_gallery: [
     ["pairing","Pairing","Before it's added","<li>Shown automatically until the thermostat is added to a home.</li><li>Scan the <b>QR</b> or type the code; needs a Thread border router on the network.</li><li>Settings stay reachable so you can set units or sensor type before pairing.</li>"],
     ["info","Matter code","Settings → Matter code","<li>The 11-digit <b>manual pairing code</b>, shown large.</li><li>Use it to add the thermostat to another home without a factory reset.</li><li>Available whether or not it's already paired.</li>"],
+    ["boot_menu","BOOT options","Hold BOOT ≥10 s","<li>Holding the recessed <b>BOOT</b> button for 10 seconds opens this chooser.</li><li><b>Pairing</b> re-opens the commissioning window so a controller can add the device.</li><li><b>Factory reset</b> erases the pairing and Thread network. Turn to pick, press to confirm; <b>Cancel</b> (or wait) backs out.</li>"],
   ],
   fault_gallery: [
     ["fault","Fault","Open / short sensor","<li>Shown when the temperature sensor reads open or shorted.</li><li>All heating and cooling are switched <b>off</b> for safety.</li><li>The status LED blinks red; the screen clears once the sensor recovers.</li>"],

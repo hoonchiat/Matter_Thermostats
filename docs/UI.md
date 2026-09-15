@@ -13,9 +13,9 @@ every input gives feedback in < 100 ms (NFR-3).
 | Encoder rotate | CW / CCW | adjust active setpoint ±0.5° | move selection / change value |
 | Encoder press (SW) | short | toggle which setpoint is active (Heat/Cool) in Auto; else enter menu on the field | select / confirm |
 | Push button | short | cycle System Mode: Off → Heat → Cool → Auto | back / cancel |
-| Push button | long (≥3 s) | open Settings menu | exit to Home |
+| Push button | long (≥5 s) | open Settings menu | exit to Home |
 | Fan-speed button | short | cycle Fan: Auto → Low → Med → High | cycle fan speed |
-| BOOT button | long (≥5 s) | factory-reset confirmation | — |
+| BOOT button | long (≥10 s) | open the **Pairing / Factory reset** chooser | — |
 
 An **adjust timeout** (default 4 s) commits a setpoint change and returns the home screen
 to its resting layout. Changes are also pushed to Matter immediately.
@@ -96,7 +96,7 @@ detent = ±0.5° (clamped to min/max limits). Commit on press or after the timeo
 
 ## 5. SETTINGS menu
 
-Long-press the push button (≥ 3 s) to open a scrollable list. **Rotate** the encoder to
+Long-press the push button (≥ 5 s) to open a scrollable list. **Rotate** the encoder to
 move the highlight, **press the encoder** to activate the highlighted row, and **short-press
 the push button** to go back / close.
 
@@ -165,6 +165,29 @@ the commissionable-data provider whether or not the device is currently commissi
 
 The QR encodes the Matter setup payload; the manual code is shown for controllers that
 prefer typed entry.
+
+## 6a. BOOT options (Pairing / Factory reset)
+
+Holding the recessed **BOOT** button for **≥ 10 s** opens a chooser (`UI_SCREEN_CONFIRM`)
+instead of resetting immediately. **Rotate** to move the highlight, **press the encoder** to
+confirm; a short push (or ~15 s of inactivity) cancels back to Home.
+
+```
+┌────────────────────────────────────────────┐
+│ BOOT OPTIONS                                │
+│────────────────────────────────────────────│
+│ ▌PAIRING          ▌   ← highlighted (invert)│
+│  FACTORY RESET                              │
+│  CANCEL                                     │
+│ TURN:SEL  PRESS:OK                          │
+└────────────────────────────────────────────┘
+```
+
+- **PAIRING** re-opens the Matter commissioning window (BLE + DNS-SD) so a controller can
+  add the device — or add itself as another admin if it is already commissioned — then shows
+  the pairing screen/code.
+- **FACTORY RESET** clears all fabrics and Thread credentials and reboots (FR).
+- **CANCEL** returns to Home.
 
 ## 7. FAULT screen (sensor fault)
 

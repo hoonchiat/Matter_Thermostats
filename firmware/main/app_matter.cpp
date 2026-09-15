@@ -386,6 +386,33 @@ void app_matter_factory_reset(void)
     esp_matter::factory_reset();   /* clears fabrics + Thread creds, then reboots */
 }
 
+void app_matter_open_commissioning_window(void)
+{
+    /* User-initiated pairing (BOOT long-press -> "Pairing"): open a basic
+     * commissioning window so a controller can commission the device, or add
+     * itself as another admin if it is already commissioned. Advertises over
+     * BLE + DNS-SD for 5 minutes.
+     *
+     * TODO(matter): the manager call and locking helper can shift between SDK
+     * versions; cross-check against docs/MATTER.md and the light example. We
+     * take the CHIP stack lock because this runs on the app's UI task, not the
+     * Matter event loop. */
+    chip::DeviceLayer::PlatformMgr().LockChipStack();
+    auto &mgr = chip::Server::GetInstance().GetCommissioningWindowManager();
+    if (!mgr.IsCommissioningWindowOpen()) {
+        CHIP_ERROR err = mgr.OpenBasicCommissioningWindow(
+            chip::System::Clock::Seconds16(300),
+            chip::CommissioningWindowAdvertisement::kAllSupported);
+        if (err != CHIP_NO_ERROR)
+            ESP_LOGE(TAG, "open commissioning window: %" CHIP_ERROR_FORMAT, err.Format());
+        else
+            ESP_LOGI(TAG, "commissioning window opened (user pairing)");
+    } else {
+        ESP_LOGI(TAG, "commissioning window already open");
+    }
+    chip::DeviceLayer::PlatformMgr().UnlockChipStack();
+}
+
 void app_matter_get_pairing_code(char *out, int out_len)
 {
     if (!out || out_len <= 0) return;

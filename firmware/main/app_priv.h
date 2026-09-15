@@ -117,6 +117,7 @@ void app_matter_report_units(bool fahrenheit);   /* TemperatureDisplayMode */
 void app_matter_report_fan(int fan_speed);       /* Fan Control FanMode */
 void app_matter_report_occupancy(bool occupied); /* Occupancy Sensing */
 void app_matter_factory_reset(void);
+void app_matter_open_commissioning_window(void);  /* user-initiated pairing */
 void app_matter_get_pairing_code(char *out, int out_len);
 
 void app_control_start(void);              /* sensor + control + ui tasks */

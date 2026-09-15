@@ -98,6 +98,16 @@ int main(void)
     m.commissioned = true; m.fault = true;
     ui_oled_render(&m); dump("fault");
 
+    /* CONFIRM — BOOT long-press chooser (Pairing / Factory reset / Cancel) */
+    m.fault = false; m.screen = UI_SCREEN_CONFIRM;
+    m.info_title = "BOOT OPTIONS";
+    {
+        static const char *boot_lines[] = { "PAIRING", "FACTORY RESET", "CANCEL" };
+        for (int i = 0; i < 3; ++i) m.menu_lines[i] = boot_lines[i];
+        m.menu_count = 3; m.menu_index = 0;
+    }
+    ui_oled_render(&m); dump("boot_menu");
+
     printf("\n}\n");
     return 0;
 }

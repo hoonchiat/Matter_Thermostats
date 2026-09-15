@@ -173,11 +173,14 @@ The reference implementation with the full gate is in
   selection.
 - **Encoder switch (select)** → enter/confirm menu items.
 - **Push button** → short: cycle mode (Off→Heat→Cool→Auto) or "back" in a menu; long
-  (≥ 3 s on home): open settings menu.
+  (≥ 5 s on home): open settings menu.
 - **Fan-speed button** → short: `EVT_BTN_FAN_SHORT` cycles the fan speed
   (Auto→Low→Med→High) from any screen; the new speed persists and mirrors to the Matter Fan
   Control cluster. Optional (`CONFIG_THERMO_PIN_BTN_FAN`, −1 disables).
-- **BOOT/reset** → long (≥ 5 s): factory-reset confirmation.
+- **BOOT/reset** → long (≥ 10 s): `EVT_RESET_LONG` opens the **`UI_SCREEN_CONFIRM`** chooser
+  (Pairing / Factory reset / Cancel) instead of resetting immediately. Rotate to select,
+  press to confirm; **Pairing** calls `app_matter_open_commissioning_window()`, **Factory
+  reset** calls `app_matter_factory_reset()`. The chooser auto-dismisses after ~15 s.
 - **Debounce:** `components/button` debounces (default 30 ms) and emits SHORT on release
   and LONG at the threshold.
 
