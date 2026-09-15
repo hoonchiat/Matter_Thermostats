@@ -8,13 +8,14 @@ idf_component_register(
         "."
     REQUIRES
         # Local drivers / logic components:
-        thermistor
+        sht4x
         rotary_encoder
         button
         thermostat_core
         relays
         ui_oled
         occupancy
+        i18n
         # ESP-IDF + Matter:
         nvs_flash
         esp_matter

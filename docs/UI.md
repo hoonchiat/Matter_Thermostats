@@ -1,8 +1,8 @@
 # Local UI — OLED Screens & Interaction Model
 
-Display: SSD1306 128×64 monochrome. Inputs: rotary **encoder** (rotate + press) and a
-**push button**. The UI is a small state machine; every input gives feedback in < 100 ms
-(NFR-3).
+Display: SSD1306 128×64 monochrome. Inputs: rotary **encoder** (rotate + press), a
+**push button**, and a dedicated **fan-speed button**. The UI is a small state machine;
+every input gives feedback in < 100 ms (NFR-3).
 
 ---
 
@@ -13,8 +13,9 @@ Display: SSD1306 128×64 monochrome. Inputs: rotary **encoder** (rotate + press)
 | Encoder rotate | CW / CCW | adjust active setpoint ±0.5° | move selection / change value |
 | Encoder press (SW) | short | toggle which setpoint is active (Heat/Cool) in Auto; else enter menu on the field | select / confirm |
 | Push button | short | cycle System Mode: Off → Heat → Cool → Auto | back / cancel |
-| Push button | long (≥3 s) | open Settings menu | exit to Home |
-| BOOT button | long (≥5 s) | factory-reset confirmation | — |
+| Push button | long (≥5 s) | open Settings menu | exit to Home |
+| Fan-speed button | short | cycle Fan: Auto → Low → Med → High | cycle fan speed |
+| BOOT button | long (≥10 s) | open the **Pairing / Factory reset** chooser | — |
 
 An **adjust timeout** (default 4 s) commits a setpoint change and returns the home screen
 to its resting layout. Changes are also pushed to Matter immediately.
@@ -72,7 +73,11 @@ Center / pill:
   degree mark.
 - **Setpoint pill**: the active target (`SET …`); in **Auto** the pill shows both, each with
   its ▲/▼ marker. A filled dot appears in the pill while heating or cooling is called.
-- **Running state** (bottom): `IDLE` / `HEATING` / `COOLING` / `FAN ON`, matching the LED.
+- **Running state** (bottom-left): `IDLE` / `HEATING` / `COOLING` / `FAN ON` (shown in the
+  selected language).
+- **Humidity** (bottom-right): relative humidity from the SHT40, e.g. `45%`; hidden only
+  while a reading is unavailable (before the first sample or during a sensor fault).
+  Units (°C/°F) and the **0.5°-per-step** setpoint adjust apply regardless of sensor.
 
 These screens can be previewed as ASCII on a host PC — see [§9](#9-previewing-the-ui-no-hardware).
 
@@ -93,7 +98,7 @@ detent = ±0.5° (clamped to min/max limits). Commit on press or after the timeo
 
 ## 5. SETTINGS menu
 
-Long-press the push button (≥ 3 s) to open a scrollable list. **Rotate** the encoder to
+Long-press the push button (≥ 5 s) to open a scrollable list. **Rotate** the encoder to
 move the highlight, **press the encoder** to activate the highlighted row, and **short-press
 the push button** to go back / close.
 
@@ -101,11 +106,12 @@ the push button** to go back / close.
 
 | Row | Action | Persisted key |
 |---|---|---|
+| `MODE: HEAT/COOL/FAN/AUTO` | encoder-press cycles the operating mode Heat → Cool → Fan → Auto; mirrored to the Matter Thermostat `SystemMode`. (OFF is reachable via the push-button mode cycle.) | `mode` |
 | `FAN: AUTO/LOW/MED/HIGH` | encoder-press cycles the fan speed; mirrored to the Matter Fan Control `FanMode` attribute | `fan` |
 | `PRESENCE: HOME/AWAY` | encoder-press toggles Home/Away (manual); Away switches to the unoccupied setpoints. In `SENSOR` mode this sets the manual preference and the sensor resumes on the next motion | `occHome` |
-| `OCC SRC: MANUAL/SENSOR` | encoder-press chooses whether presence comes from the manual toggle or the PIR/occupancy sensor | `occSrc` |
+| `SOURCE: MANUAL/SENSOR` | encoder-press chooses whether presence comes from the manual toggle or the PIR/occupancy sensor | `occSrc` |
 | `UNITS: C/F` | encoder-press toggles °C ⇄ °F (also mirrors to the Matter `TemperatureDisplayMode` attribute) | `units` |
-| `SENSOR: TYPE 2/3` | encoder-press toggles the NTC curve; re-applied to the sensor driver live | `ntcType` |
+| `LANGUAGE: …` | encoder-press cycles the UI language: **English → Français → Español → Deutsch**. All on-screen labels re-render immediately | `lang` |
 | `MATTER CODE >` | encoder-press opens the **INFO screen** showing the manual pairing code (the Matter setup payload number) | — |
 | `BACK` | return to Home | — |
 
@@ -115,12 +121,28 @@ bottom row and the **unoccupied setpoints** are in effect (Matter OCC feature) �
 pill and the ADJUST screen then show/edit those (ADJUST reads `AWAY HEAT` / `AWAY COOL`),
 so turning the encoder while Away changes the Away temperature, not the comfort one.
 
-Fan speed can also be changed remotely from any Matter controller (see
-[MATTER.md](MATTER.md)); local and remote stay in sync. `AUTO` runs the fan only during a
-heat/cool call; `LOW/MED/HIGH` run it continuously at that speed (circulate).
+Fan speed has three interchangeable controls that stay in sync: the dedicated **fan-speed
+button** (short-press cycles Auto → Low → Med → High from any screen), the `FAN` settings
+row, and any Matter controller (see [MATTER.md](MATTER.md)). `AUTO` runs the fan only during
+a heat/cool call; `LOW/MED/HIGH` run it continuously at that speed (circulate).
 
 The selected row is drawn as an inverted (highlighted) bar. Changes are persisted to NVS
 immediately and, where relevant, pushed to Matter controllers.
+
+### Languages
+
+All on-screen labels are translated via the `i18n` component (`components/i18n`), selectable
+at runtime from **Settings → LANGUAGE**: **English, Français, Español, Deutsch**. Strings are
+ASCII so they render in the existing 5×7 font with no layout change — French/Spanish uppercase
+follow the usual convention of dropping accents, and German umlauts are transliterated
+(ae/oe/ue, ss). Numbers, the °C/°F unit letter, and the fan abbreviations (AU/LO/MD/HI) are
+language-neutral and stay as-is. The selected language persists in NVS (`lang`).
+
+### Identify (no status LED)
+
+There is no status RGB LED — the OLED is the single status surface (see
+[HARDWARE.md §7](HARDWARE.md#7-status-indication-on-the-oled--no-led)). A Matter **Identify**
+request shows a centered **IDENTIFY** banner over the current screen for a few seconds.
 
 ### Planned (hooks already in the config/NVS)
 
@@ -162,6 +184,29 @@ the commissionable-data provider whether or not the device is currently commissi
 The QR encodes the Matter setup payload; the manual code is shown for controllers that
 prefer typed entry.
 
+## 6a. BOOT options (Pairing / Factory reset)
+
+Holding the recessed **BOOT** button for **≥ 10 s** opens a chooser (`UI_SCREEN_CONFIRM`)
+instead of resetting immediately. **Rotate** to move the highlight, **press the encoder** to
+confirm; a short push (or ~15 s of inactivity) cancels back to Home.
+
+```
+┌────────────────────────────────────────────┐
+│ BOOT OPTIONS                                │
+│────────────────────────────────────────────│
+│ ▌PAIRING          ▌   ← highlighted (invert)│
+│  FACTORY RESET                              │
+│  CANCEL                                     │
+│ TURN:SEL  PRESS:OK                          │
+└────────────────────────────────────────────┘
+```
+
+- **PAIRING** re-opens the Matter commissioning window (BLE + DNS-SD) so a controller can
+  add the device — or add itself as another admin if it is already commissioned — then shows
+  the pairing screen/code.
+- **FACTORY RESET** clears all fabrics and Thread credentials and reboots (FR).
+- **CANCEL** returns to Home.
+
 ## 7. FAULT screen (sensor fault)
 
 ```
@@ -173,7 +218,8 @@ prefer typed entry.
 └────────────────────────────────────────────┘
 ```
 
-All HVAC outputs are forced off while a fault is active (FR-12); the status LED blinks red.
+All HVAC outputs are forced off while a fault is active (FR-12); the full-screen fault
+message is the fault indication (there is no status LED).
 
 ## 8. Rendering notes
 

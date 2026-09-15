@@ -1,7 +1,7 @@
 # Hardware Design
 
-Covers the block diagram, **pin assignment**, thermistor analog front-end and its math,
-input/output stages, power, and the BOM. Machine-readable copies live in
+Covers the block diagram, **pin assignment**, the SHT40 room sensor, input/output stages,
+power, and the BOM. Machine-readable copies live in
 [`hardware/pinout.csv`](../hardware/pinout.csv) and [`hardware/bom.csv`](../hardware/bom.csv).
 
 ---
@@ -13,12 +13,12 @@ input/output stages, power, and the BOM. Machine-readable copies live in
    USB-C 5V ───▶ 3V3   │                                     │
    24VAC ─▶ [iso buck]─▶ LDO/buck ─▶ 3V3 ─▶ ESP32-C6-WROOM-1  │
                        │                                     │
-   10K NTC ─[divider+RC]────────────────▶ ADC1_CH1 (GPIO1)  │
+   SHT40 (temp+RH) ◀── I2C0 0x44 (shared bus) ──────────────│
    OLED SSD1306 ◀──── I2C0 (SDA GPIO6 / SCL GPIO7) ─────────│
    Encoder A/B ─────────────────────────▶ PCNT (GPIO10/11)  │
    Encoder SW ──────────────────────────▶ GPIO2             │
    Push button ─────────────────────────▶ GPIO3             │
-   RGB status LED ◀──── RMT (GPIO8)                          │
+   Fan speed btn ───────────────────────▶ GPIO14            │
    Relays W/Y/G/OB ◀── GPIO18/19/20/21 ─▶ [drivers] ─▶ 24VAC │
    BOOT/reset btn ──────────────────────▶ GPIO9             │
                        └─────────────────────────────────────┘
@@ -30,126 +30,83 @@ input/output stages, power, and the BOM. Machine-readable copies live in
 
 The ESP32-C6 GPIO matrix is flexible; the assignment below avoids the **strapping pins**
 (GPIO4, 5, 8*, 9*, 15), the **USB-Serial-JTAG** pins (GPIO12/13), the **UART0 console**
-(GPIO16/17), and the internal SPI-flash pins (GPIO24–30). ADC1 channels are GPIO0–GPIO6.
+(GPIO16/17), and the internal SPI-flash pins (GPIO24–30).
 
 | Signal | GPIO | On-chip peripheral | Direction | Notes |
 |---|---|---|---|---|
-| **NTC sense** | GPIO1 | ADC1_CH1 | AIN | Divider node; 12-bit, 12 dB atten |
-| **I²C SDA** (OLED) | GPIO6 | I2C0 | I/O | 4.7 kΩ pull-up to 3V3 |
-| **I²C SCL** (OLED) | GPIO7 | I2C0 | O | 4.7 kΩ pull-up to 3V3 |
+| **I²C SDA** (OLED + SHT40) | GPIO6 | I2C0 | I/O | 4.7 kΩ pull-up to 3V3; shared bus |
+| **I²C SCL** (OLED + SHT40) | GPIO7 | I2C0 | O | 4.7 kΩ pull-up to 3V3; shared bus |
 | **Encoder A / CLK** | GPIO10 | PCNT ch0 | IN | Hardware quadrature decode |
 | **Encoder B / DT** | GPIO11 | PCNT ch0 | IN | Hardware quadrature decode |
 | **Encoder switch** | GPIO2 | GPIO (ISR) | IN | Internal pull-up; press = select |
 | **Push button** | GPIO3 | GPIO (ISR) | IN | Internal pull-up; mode / back |
+| **Fan-speed button** | GPIO14 | GPIO (ISR) | IN | Internal pull-up; cycles Auto/Low/Med/High (−1 = unused) |
 | **Relay W** (heat) | GPIO18 | GPIO | OUT | Active-high to driver |
 | **Relay Y** (cool/compressor) | GPIO19 | GPIO | OUT | Active-high to driver |
 | **Relay G** (fan enable) | GPIO20 | GPIO | OUT | Active-high; any fan speed > 0 |
 | **Relay O·B** (reversing valve) | GPIO21 | GPIO | OUT | Heat-pump only |
 | **Fan taps** G_LOW/MED/HIGH (opt.) | −1 | GPIO | OUT | Multi-speed blower; one-hot; disabled (−1) by default |
 | **Occupancy / PIR** (opt.) | −1 | GPIO | IN | Motion input; disabled (−1) = manual Home/Away only |
-| **Status RGB LED** | GPIO8* | RMT (WS2812) | OUT | On-board on DevKitC-1 (strapping — LED only) |
 | **Factory-reset button** | GPIO9* | GPIO | IN | Re-uses BOOT (strapping, pulled-up) |
 | **Console UART TX/RX** | GPIO16/17 | UART0 | — | Debug/log; keep free |
 | **USB D−/D+** | GPIO12/13 | USB-Serial-JTAG | — | Flash/monitor; keep free |
 
-`*` GPIO8 and GPIO9 are strapping pins; both are used here only in roles that tolerate it
-(a WS2812 output that is high-Z at reset, and a button that is externally pulled to the
-level BOOT expects). Do not repurpose them for peripherals that drive them at boot.
+`*` GPIO9 is a strapping pin, used here only for the BOOT button (externally pulled to the
+level the bootloader expects). Do not repurpose it for a peripheral that drives it at boot.
 
 These names are mirrored 1:1 in `firmware/main/Kconfig.projbuild` so every pin is a
 menuconfig option — change the board without touching code.
 
 ---
 
-## 3. Thermistor front-end
+## 3. Room sensor (SHT40)
 
-### 3.1 Divider topology
+The room sensor is a **Sensirion SHT40** — a digital, factory-calibrated temperature +
+relative-humidity sensor on I²C. It is the only room sensor: there is no analog front-end,
+no ADC, and no thermistor.
 
-```
-        3V3
-         │
-       [ R_fix = 10.0 kΩ, 0.1% ]        ← fixed reference resistor (top)
-         │
-         ├───────────┬──────────▶ GPIO1 / ADC1_CH1
-         │         [ C = 100 nF ]        ← RC low-pass with R_series
-       [ R_ntc ]      │                    (also add ~1–2 kΩ series R for ADC/ESD)
-     10K NTC (Type2/3)│
-         │            │
-        GND          GND
-```
+| Part | Interface | Provides | Address | Notes |
+|---|---|---|---|---|
+| **SHT40** (SHT40-AD1B) | I²C | temperature **+ relative humidity** | 0x44 (0x45 for -BD1B) | shares the OLED bus; no extra MCU pins |
 
-With the NTC on the **bottom** leg, node voltage falls as temperature rises:
+### 3.1 Wiring
+
+The SHT40 is a 4-pin part (VDD / GND / SDA / SCL) that sits on the **same I²C0 bus** as the
+OLED (SDA GPIO6, SCL GPIO7, shared 4.7 kΩ pull-ups). The firmware creates one I²C master bus
+and adds both the OLED (0x3C) and the SHT40 (0x44) to it, so adding the sensor costs **no
+extra GPIO**. Decouple VDD with 100 nF close to the part.
 
 ```
-V_node = 3V3 · R_ntc / (R_fix + R_ntc)
+   3V3 ──┬───────────────┐
+         │             [ SHT40 ]
+      [0.1µF]   SDA ──── GPIO6 (I2C0, shared with OLED)
+         │      SCL ──── GPIO7 (I2C0, shared with OLED)
+        GND ───── GND
 ```
 
-Solving for the thermistor resistance from the measured node voltage:
+### 3.2 Reading & conversion
+
+The `sht4x` component issues the **high-precision measure** command (`0xFD`), reads 6 bytes
+(temperature word + CRC, humidity word + CRC), validates both bytes with the Sensirion
+**CRC-8** (poly 0x31, init 0xFF), and converts the raw ticks:
 
 ```
-R_ntc = R_fix · V_node / (Vref − V_node)
+T  [°C] = −45 + 175 · S_T  / 65535
+RH [%]  =  −6 + 125 · S_RH / 65535     (clamped to 0…100 %)
 ```
 
-where `Vref` is the divider top rail (nominally 3.30 V). Because the ESP32 ADC is **not**
-ratiometric to the supply (it references an internal ~1.1 V bandgap with attenuation), the
-firmware uses the ESP-IDF **ADC calibration** API to convert raw counts → millivolts, and
-`Vref` is a calibratable constant (`CONFIG_THERMO_DIVIDER_VREF_MV`). Powering the divider
-top from a clean, known 3.3 V (or a dedicated reference) directly improves accuracy.
+A user **calibration offset** (`offset`, 0.01 °C) is added after conversion. These pure
+functions are host-unit-tested (`firmware/test/host/test_sht4x.c`), including the datasheet
+CRC vector `0xBEEF → 0x92`.
 
-> **Design tip:** placing `R_fix` on top and the NTC on the bottom keeps the sense node at
-> a comfortable mid-scale voltage around room temperature and lands the steepest part of
-> the transfer curve in the comfort band, maximizing resolution where it matters.
+### 3.3 Accuracy & fault handling
 
-### 3.2 Resistance → temperature
-
-Two methods, both in `components/thermistor`:
-
-1. **Lookup table (primary, recommended for HVAC accuracy).** A monotonic R→T table per
-   curve (Type 2, Type 3) with linear interpolation between points. Generate it from the
-   manufacturer R-T table (or from β) with [`tools/gen_ntc_lut.py`](../tools/gen_ntc_lut.py):
-
-   ```bash
-   python3 tools/gen_ntc_lut.py --type 3 --tmin -20 --tmax 60 --step 5 > firmware/components/thermistor/ntc_type3_lut.inc
-   ```
-
-2. **Steinhart–Hart / β model (fallback & interpolation).**
-
-   β-model:
-   ```
-   1/T = 1/T0 + (1/β)·ln(R_ntc / R0)      T0 = 298.15 K, R0 = 10 kΩ
-   ```
-   Steinhart–Hart (more accurate over wide range):
-   ```
-   1/T = A + B·ln(R) + C·(ln R)³
-   ```
-   Coefficients are configurable per curve. Nominal starting values (validate against your
-   sensor's datasheet):
-
-   | Curve | β₍25/85₎ (K) | Notes |
-   |---|---|---|
-   | 10 kΩ Type 2 | ≈ 3891 | legacy/Honeywell-style "10K-2" |
-   | 10 kΩ Type 3 | ≈ 3976 | common "10K-3" (BAPI/ACI-style) |
-
-   The β values above are *nominal*; the LUT from the datasheet is authoritative.
-
-### 3.3 Filtering & fault handling
-
-- **Median-of-N** raw samples (default N=5) rejects impulse noise.
-- **EMA** (exponential moving average, α configurable) smooths the temperature output.
-- **Fault:** node voltage within a small band of 0 V or `Vref` ⇒ shorted or open sensor ⇒
-  report fault, blank `LocalTemperature` behavior per Matter, and force all relays off.
-
-### 3.4 Accuracy budget (typical, after 1-point calibration)
-
-| Source | Contribution |
-|---|---|
-| NTC tolerance (±1 %) | ~±0.25 °C near 25 °C |
-| R_fix 0.1 % | ~±0.03 °C |
-| ADC calibration | ~±0.1 °C |
-| Curve/LUT interpolation | ~±0.05 °C |
-| **Net (comfort band)** | **≈ ±0.3 °C** (NFR-1) |
-
-Self-heating is negligible: with `R_fix` = 10 kΩ the NTC dissipates ≲ 0.3 mW.
+- **Datasheet accuracy:** ±0.2 °C (typ.) temperature, ±1.8 %RH (typ.) — comfortably within
+  the ±0.3 °C comfort-band target (NFR-1), with no board-level calibration required.
+- **Fault:** a failed read or CRC mismatch ⇒ report fault, blank the Matter
+  `LocalTemperature`, and force all relays off (FR-12).
+- **Self-heating:** negligible at the ~1 Hz sampling used here (single-shot high-precision
+  reads, sensor idle between samples).
 
 ---
 
@@ -157,7 +114,8 @@ Self-heating is negligible: with `R_fix` = 10 kΩ the NTC dissipates ≲ 0.3 mW.
 
 - **Default:** SSD1306, 128×64, monochrome, I²C, address **0x3C** (0x3D selectable).
 - **Alternates:** SH1106 128×64 (firmware flag), SSD1306 128×32 0.91″ (reduced layout).
-- Shared I²C0 bus @ 400 kHz. Bus has headroom for a future humidity sensor (e.g. SHT4x).
+- Shared **I²C0 bus @ 400 kHz** — the OLED (0x3C) and the optional **SHT40** (0x44) sit on
+  the same two wires. The firmware creates one I²C master bus and adds both devices to it.
 
 ### OLED options
 
@@ -178,7 +136,14 @@ Self-heating is negligible: with `R_fix` = 10 kΩ the NTC dissipates ≲ 0.3 mW.
   glitch filter.
 - **Encoder switch (SW)** and **push button:** momentary, active-low with internal
   pull-ups; debounced in firmware (`components/button`) with short/long-press detection.
-- **BOOT/reset button:** doubles as the factory-reset input (long-press).
+- **Fan-speed button (optional):** a dedicated momentary button on
+  `CONFIG_THERMO_PIN_BTN_FAN` (default GPIO14, active-low, internal pull-up). Each short
+  press cycles the fan speed **Auto → Low → Med → High → Auto**; the new speed shows in the
+  OLED status bar and mirrors to the Matter Fan Control cluster. Leave the pin at −1 to use
+  only the settings menu / Matter for fan control.
+- **BOOT/reset button:** held **≥ 10 s** it opens an on-screen chooser — **Pairing**
+  (re-open the Matter commissioning window) or **Factory reset** — rather than resetting
+  immediately.
 - **Occupancy / PIR sensor (optional):** a digital motion output (e.g. HC-SR501, AM312, or
   a PIR module) on `CONFIG_THERMO_PIN_OCCUPANCY`. Active-high by default (idle low, high on
   motion); the firmware enables the opposite internal pull so an unconnected pin reads "no
@@ -213,19 +178,20 @@ reaches the blower depends on the wiring, all firmware-selectable:
 During a heat/cool call the fan runs at the configured **call speed** (`THERMO_FAN_CALL_SPEED`,
 default High). A fixed Low/Med/High selection circulates continuously even when idle.
 
-## 7. Status LED
+## 7. Status indication (on the OLED — no LED)
 
-On-board addressable **WS2812** RGB (GPIO8, RMT-driven). Color/behavior encodes state:
+There is **no status LED**. The always-on OLED already conveys every state, so a discrete
+RGB LED would be redundant hardware; each state is shown on the display:
 
-| State | LED |
+| State | On-screen indication |
 |---|---|
-| Uncommissioned / pairing | slow blue pulse |
-| Joining Thread | blue blink |
-| Idle (connected, no call) | dim green |
-| Calling for heat | solid orange/red |
-| Calling for cool | solid cyan/blue |
-| Sensor/other fault | red blink |
-| Identify (Matter) | white blink |
+| Uncommissioned / pairing | **PAIRING** screen (QR box + manual code) |
+| Connected | filled link dot in the status bar (hollow ring when not) |
+| Idle (no call) | bottom-left running-state text: **IDLE** |
+| Calling for heat | **HEATING** + a filled dot in the setpoint pill; ▲ mode marker |
+| Calling for cool | **COOLING** + a filled dot in the setpoint pill; ▼ mode marker |
+| Sensor fault | full-screen **FAULT** screen (outputs forced off) |
+| Identify (Matter) | a centered **IDENTIFY** banner over the current screen |
 
 ## 8. Power
 
@@ -238,10 +204,10 @@ On-board addressable **WS2812** RGB (GPIO8, RMT-driven). Color/behavior encodes 
 ## 9. PCB / enclosure notes
 
 - Keep the module antenna at a board edge with the vendor keep-out; no copper/metal near it.
-- Route the NTC sense pair away from switching nodes; guard the ADC input; single-point
-  analog ground for the divider.
+- Keep the SHT40 I²C traces short; route them away from switching nodes.
 - Physically and electrically separate the 24 VAC section (creepage/clearance) from logic.
-- Mount the NTC away from the MCU/relays' self-heating; ideally a remote/edge-vented probe.
+- Mount the SHT40 away from the MCU/relays' self-heating and with airflow to the room —
+  ideally vented at the enclosure edge, or on a short remote pigtail off the shared I²C bus.
 
 ## 10. Bill of materials
 
@@ -253,12 +219,10 @@ Summary — full list in [`hardware/bom.csv`](../hardware/bom.csv):
 | 1 | SSD1306 128×64 I²C OLED | 0x3C |
 | 1 | EC11 rotary encoder w/ switch | A/B/SW |
 | 1 | Momentary push button | mode/back |
-| 1 | 10 kΩ NTC, Type 2 or Type 3 | room sensor |
-| 1 | 10.0 kΩ 0.1 % resistor | divider reference |
+| 1 | Momentary push button | fan-speed cycle (Auto/Low/Med/High) |
+| 1 | Sensirion SHT40 (SHT40-AD1B) | room sensor: temp + humidity, I²C 0x44 |
 | 2 | 4.7 kΩ resistor | I²C pull-ups |
-| 1 | 100 nF + 1–2 kΩ | ADC RC + series |
 | 4 | Relay or opto-triac + driver | W/Y/G/O·B |
 | 4 | Flyback diode / snubber | per relay |
-| 1 | WS2812 RGB LED | status |
 | 1 | Power supply (USB-C and/or 24 VAC→5 V iso) | |
 | — | Decoupling caps, connectors, terminal blocks | |

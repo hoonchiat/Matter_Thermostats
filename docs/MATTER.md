@@ -25,7 +25,7 @@ Provided by the stack. Key clusters:
 
 | Cluster | ID | Role |
 |---|---|---|
-| Identify | 0x0003 | locate device (blink LED) |
+| Identify | 0x0003 | locate device (shows an IDENTIFY banner on the OLED; no LED) |
 | **Thermostat** | 0x0201 | core function |
 | Thermostat User Interface Configuration | 0x0204 | display units, keypad lock |
 | Groups | 0x0004 | *(optional)* |
@@ -50,6 +50,16 @@ toggle — so controllers and automations can react to presence.
 |---|---|---|
 | Identify | 0x0003 | locate |
 | **Occupancy Sensing** | 0x0406 | `Occupancy` bitmap (bit0 = occupied) |
+
+### Endpoint 4 — Humidity Sensor (`0x0307`) — *only when an SHT40 is fitted*
+
+| Cluster | ID | Role |
+|---|---|---|
+| Identify | 0x0003 | locate |
+| **Relative Humidity Measurement** | 0x0405 | `MeasuredValue` = %RH × 100 (uint16, `null` on fault) |
+
+The room sensor is the **SHT40**, which always provides relative humidity, so this endpoint
+is always present.
 
 ---
 
@@ -235,6 +245,35 @@ device joins multiple fabrics simultaneously.
 
 ---
 
+## 5a. Thread mesh & range extension
+
+Thread is a self-healing **802.15.4 mesh**, so coverage grows with the number of
+mains-powered nodes rather than being limited to a single radio hop.
+
+- **Roles.** A **Full Thread Device (FTD)** that is mains-powered joins as a
+  Router-Eligible End Device (**REED**) and is promoted by the network **Leader** to an
+  active **Router**. Routers forward packets for their neighbors — that relaying is what
+  extends range and lets the mesh re-route around a node that drops. Battery **Sleepy End
+  Devices (SED/MED)** attach to a parent and do **not** route, so they don't extend range.
+- **This device is a range extender.** It is mains-powered (C-wire / 24 VAC→5 V, always
+  on — never sleepy) and is built as an FTD (`CONFIG_OPENTHREAD_FTD=y`), so once joined it
+  is router-eligible and, when promoted, relays for other Thread devices. Each installed
+  thermostat effectively becomes a repeater for nearby Thread nodes.
+- **What you still need.** A **Thread Border Router** bridges the mesh to your LAN (see the
+  prerequisite in §5); the mesh itself is formed by the routers. Range is meaningfully
+  extended when there are **several** routers — one thermostat plus one Border Router is a
+  single hop.
+- **Limits.** Thread caps a network at **32 active routers** (the Leader manages REED
+  promotion/demotion automatically); a device may belong to multiple fabrics but is on one
+  Thread network at a time.
+
+> To keep the device a router, do **not** build it as a Minimal Thread Device
+> (`CONFIG_OPENTHREAD_MTD`) or enable sleepy-end-device / low-power sleep on the 802.15.4
+> radio — those trade routing (and thus range extension) for battery life, which this
+> mains-powered design does not need.
+
+---
+
 ## 6. Local ↔ Matter synchronization rules
 
 Everything the user can change locally can also be **overridden from Matter**, and vice
@@ -254,6 +293,7 @@ versa — the two are kept in sync bidirectionally.
 | Occupancy change (PIR or manual toggle) | switch occupied↔unoccupied setpoints → `attribute::update(Occupancy)` (thermostat + sensor endpoints) |
 | Local Away-setpoint change (ADJUST while Away) | update state → `attribute::update(Unoccupied*Setpoint)` |
 | Measured temp change ≥ 0.1 °C or every N s | `attribute::update(LocalTemperature)` |
+| Measured humidity change ≥ 1 % or every 60 s (SHT40) | `attribute::update(RelativeHumidityMeasurement.MeasuredValue)` |
 | Output state change | `attribute::update(ThermostatRunningState)` |
 | Sensor fault | `LocalTemperature = null`, outputs off, running state cleared |
 
@@ -261,8 +301,18 @@ All remote writes are persisted to NVS so an override survives a reboot.
 
 ---
 
-## 7. Factory reset / decommission
+## 7. Local pairing / factory reset (BOOT chooser)
 
-Local long-press (BOOT ≥ 5 s, confirmed on OLED) removes all fabrics and Thread
-credentials and returns to step 1 above. Controllers should also be told to "remove" the
-device to clean up their side.
+Holding **BOOT ≥ 10 s** opens an on-screen chooser instead of resetting immediately:
+
+- **Pairing** → `app_matter_open_commissioning_window()` opens a basic commissioning window
+  (BLE + DNS-SD, 5 min) via the Administrator Commissioning path, so a controller can
+  commission the device — or add itself as another admin if it is already commissioned. This
+  is the local trigger for the multi-admin flow in §5.
+- **Factory reset** → `esp_matter::factory_reset()` removes all fabrics and Thread
+  credentials and returns to step 1 of the commissioning flow. Controllers should also be
+  told to "remove" the device to clean up their side.
+
+Rotate the encoder to select and press to confirm; a short push or ~15 s of inactivity
+cancels. (Both actions are also reachable remotely — Administrator Commissioning to open a
+window, or removing the last fabric to decommission.)

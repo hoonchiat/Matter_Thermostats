@@ -38,6 +38,7 @@ int main(void)
     ui_model_t m = {0};
     m.commissioned = true; m.occupied = true;
     m.temp_c100 = 2140; m.heat_set_c100 = 2000; m.cool_set_c100 = 2600;
+    m.humidity_valid = true; m.humidity_pct100 = 4500;   /* 45% (SHT40) */
 
     /* HOME — heating call, fan HIGH, °C */
     m.screen = UI_SCREEN_HOME; m.mode = 1; m.calling_heat = true; m.fan_on = true;

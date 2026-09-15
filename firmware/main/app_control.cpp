@@ -1,6 +1,6 @@
 /*
  * app_control.cpp — the runtime: sensor task, control task, and UI task.
- * Ties together the thermistor, thermostat_core, relays, rotary_encoder,
+ * Ties together the sht4x sensor, thermostat_core, relays, rotary_encoder,
  * button and ui_oled components, and keeps g_state and Matter in sync.
  */
 #include "app_priv.h"
@@ -11,11 +11,14 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 
+#include "driver/i2c_master.h"
 #include "ui_oled.h"
 #include "rotary_encoder.h"
 #include "button.h"
 #include "relays.h"
 #include "occupancy.h"
+#include "sht4x.h"
+#include "i18n.h"
 
 #define TAG "app_control"
 
@@ -26,41 +29,64 @@
 #define COOL_MAX 3200
 
 /* Button identifiers. */
-enum { BTN_ID_PUSH = 1, BTN_ID_ENC_SW = 2, BTN_ID_RESET = 3 };
+enum { BTN_ID_PUSH = 1, BTN_ID_ENC_SW = 2, BTN_ID_RESET = 3, BTN_ID_FAN = 4 };
 
 static QueueHandle_t s_btn_q;      /* button_event_t from the button component */
 static int64_t s_last_adjust_ms;   /* for ADJUST auto-timeout                  */
+static i2c_master_bus_handle_t s_i2c_bus;  /* shared by the OLED and the SHT40  */
 
 /* Settings-menu items (order = on-screen order). */
 enum {
-    MENU_FAN = 0,       /* fan speed: AUTO / LOW / MED / HIGH */
+    MENU_MODE = 0,      /* HEAT / COOL / FAN / AUTO           */
+    MENU_FAN,           /* fan speed: AUTO / LOW / MED / HIGH */
     MENU_PRESENCE,      /* Home / Away (manual toggle)        */
     MENU_OCC_SRC,       /* occupancy source: MANUAL / SENSOR  */
     MENU_UNITS,         /* °C / °F                    */
-    MENU_SENSOR,        /* NTC Type 2 / Type 3        */
+    MENU_LANGUAGE,      /* EN / FR / ES / DE          */
     MENU_MATTER_CODE,   /* view Matter pairing code   */
     MENU_BACK,          /* return to home             */
     MENU_COUNT,
 };
 
-static const char *fan_speed_name(int s)
+/* BOOT long-press chooser (UI_SCREEN_CONFIRM) items (order = on-screen order). */
+enum { BOOT_OPT_PAIRING = 0, BOOT_OPT_RESET, BOOT_OPT_CANCEL, BOOT_OPT_COUNT };
+
+/* Auto-dismiss the BOOT chooser back to HOME after this idle time. */
+#define BOOT_MENU_TIMEOUT_MS 15000
+
+/* i18n message ids for the current fan speed / mode (settings-menu values). */
+static int fan_speed_msg(int s)
 {
     switch (s) {
-        case THERMO_FAN_LOW:  return "LOW";
-        case THERMO_FAN_MED:  return "MED";
-        case THERMO_FAN_HIGH: return "HIGH";
+        case THERMO_FAN_LOW:  return STR_F_LOW;
+        case THERMO_FAN_MED:  return STR_F_MED;
+        case THERMO_FAN_HIGH: return STR_F_HIGH;
         case THERMO_FAN_AUTO:
-        default:              return "AUTO";
+        default:              return STR_F_AUTO;
+    }
+}
+
+static int mode_msg_id(int m)
+{
+    switch (m) {
+        case THERMO_MODE_HEAT:     return STR_M_HEAT;
+        case THERMO_MODE_COOL:     return STR_M_COOL;
+        case THERMO_MODE_FAN_ONLY: return STR_M_FAN;
+        case THERMO_MODE_AUTO:     return STR_M_AUTO;
+        case THERMO_MODE_OFF:
+        default:                   return STR_M_OFF;
     }
 }
 
 /* Persistent buffers backing the UI model's string pointers (ui_task only). */
 static char s_code[24];
-static char s_menu_fan[20];
-static char s_menu_presence[20];
-static char s_menu_occsrc[20];
+static char s_menu_mode[24];
+static char s_menu_fan[24];
+static char s_menu_presence[24];
+static char s_menu_occsrc[24];
 static char s_menu_units[20];
-static char s_menu_sensor[20];
+static char s_menu_language[24];
+static char s_menu_code[20];
 static const char *s_menu_lines[UI_MENU_MAX];
 
 static inline int64_t now_ms(void) { return esp_timer_get_time() / 1000; }
@@ -80,35 +106,44 @@ static int setpoint_step_c100(void)
 static void sensor_task(void *arg)
 {
     (void)arg;
-    thermistor_config_t tc = {
-        .adc_gpio      = CONFIG_THERMO_PIN_NTC_ADC,
-        .r_fix_ohm     = CONFIG_THERMO_DIVIDER_RFIX_OHM,
-        .vref_mv       = CONFIG_THERMO_DIVIDER_VREF_MV,
-        .type          = (ntc_type_t)g_state.cfg.ntc_type,
-        .median_n      = CONFIG_THERMO_ADC_MEDIAN_N,
-        .ema_alpha_pct = CONFIG_THERMO_EMA_ALPHA_PCT,
-        .offset_c100   = g_state.cfg.offset_c100,
-    };
-    if (thermistor_init(&tc) != ESP_OK) {
-        ESP_LOGE(TAG, "thermistor init failed");
+    app_lock();
+    int  offset_c100 = g_state.cfg.offset_c100;
+    app_unlock();
+
+    /* SHT40 is the only room sensor: temperature + relative humidity over I2C. */
+    if (sht4x_init(s_i2c_bus, CONFIG_THERMO_SHT40_ADDR) != ESP_OK) {
+        ESP_LOGE(TAG, "SHT40 init failed");
     }
 
     int last_reported = INT32_MIN;
     int64_t last_report_ms = 0;
+    int last_rh_reported = INT32_MIN;
+    int64_t last_rh_ms = 0;
 
     for (;;) {
-        float temp_c = 0.0f;
-        bool fault = false;
-        thermistor_read(&temp_c, &fault);
+        float temp_c = 0.0f, rh_pct = 0.0f;
+        bool fault = false, have_rh = false;
+
+        bool f = false;
+        if (sht4x_read(&temp_c, &rh_pct, &f) == ESP_OK && !f) {
+            temp_c += offset_c100 / 100.0f;       /* apply calibration offset */
+            have_rh = true;
+        } else {
+            fault = true;
+        }
+
         int temp_c100 = (int)(temp_c * 100.0f + (temp_c >= 0 ? 0.5f : -0.5f));
+        int rh_pct100 = have_rh ? (int)(rh_pct * 100.0f + 0.5f) : 0;
 
         app_lock();
         g_state.temp_c100 = temp_c100;
         g_state.fault = fault;
+        g_state.humidity_valid = have_rh && !fault;
+        g_state.humidity_pct100 = g_state.humidity_valid ? rh_pct100 : 0;
         app_unlock();
 
-        /* Rate-limited Matter report: on >=0.1C change or every 30 s. */
         int64_t t = now_ms();
+        /* Temperature: report on >=0.1C change or every 30 s. */
         if (fault) {
             app_matter_report_temperature(0, true);
             last_reported = INT32_MIN;
@@ -116,6 +151,13 @@ static void sensor_task(void *arg)
             app_matter_report_temperature(temp_c100, false);
             last_reported = temp_c100;
             last_report_ms = t;
+        }
+        /* Humidity (SHT40): report on >=1% change or every 60 s. */
+        if (have_rh && !fault &&
+            (abs(rh_pct100 - last_rh_reported) >= 100 || (t - last_rh_ms) > 60000)) {
+            app_matter_report_humidity(rh_pct100, true);
+            last_rh_reported = rh_pct100;
+            last_rh_ms = t;
         }
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
@@ -230,6 +272,10 @@ static void button_task(void *arg)
             case BTN_ID_RESET:
                 if (ev.type == BUTTON_EVENT_LONG) app_post_event(EVT_RESET_LONG, 0);
                 break;
+            case BTN_ID_FAN:
+                /* dedicated fan-speed button: short press cycles the speed */
+                if (ev.type == BUTTON_EVENT_SHORT) app_post_event(EVT_BTN_FAN_SHORT, 0);
+                break;
         }
     }
 }
@@ -247,6 +293,13 @@ static void cycle_mode(void)
         default:               m = THERMO_MODE_OFF;  break;
     }
     g_state.cfg.mode = m;
+}
+
+/* Cycle the fan speed AUTO -> LOW -> MED -> HIGH -> AUTO.
+ * Shared by the settings-menu FAN row and the dedicated fan-speed button. */
+static void cycle_fan_speed(void)
+{
+    g_state.cfg.fan_speed = (g_state.cfg.fan_speed + 1) % 4;
 }
 
 /* Adjust the active setpoint by encoder detents (home/adjust screens only).
@@ -269,13 +322,22 @@ static bool adjust_setpoint(int delta)
 }
 
 /* Act on the selected settings-menu row. Sets change flags for the caller. */
-static void menu_activate(bool *changed_units, bool *changed_sensor,
+static void menu_activate(bool *changed_units, bool *changed_mode,
                           bool *changed_fan, bool *save)
 {
     switch (g_state.menu_index) {
+        case MENU_MODE:
+            /* cycle HEAT -> COOL -> FAN -> AUTO -> HEAT */
+            switch (g_state.cfg.mode) {
+                case THERMO_MODE_HEAT: g_state.cfg.mode = THERMO_MODE_COOL;     break;
+                case THERMO_MODE_COOL: g_state.cfg.mode = THERMO_MODE_FAN_ONLY; break;
+                case THERMO_MODE_FAN_ONLY: g_state.cfg.mode = THERMO_MODE_AUTO; break;
+                default:               g_state.cfg.mode = THERMO_MODE_HEAT;     break;
+            }
+            *changed_mode = true; *save = true;
+            break;
         case MENU_FAN:
-            /* cycle AUTO -> LOW -> MED -> HIGH -> AUTO */
-            g_state.cfg.fan_speed = (g_state.cfg.fan_speed + 1) % 4;
+            cycle_fan_speed();
             *changed_fan = true; *save = true;
             break;
         case MENU_PRESENCE:
@@ -294,10 +356,9 @@ static void menu_activate(bool *changed_units, bool *changed_sensor,
             g_state.cfg.fahrenheit = !g_state.cfg.fahrenheit;
             *changed_units = true; *save = true;
             break;
-        case MENU_SENSOR:
-            g_state.cfg.ntc_type =
-                (g_state.cfg.ntc_type == NTC_TYPE_2) ? NTC_TYPE_3 : NTC_TYPE_2;
-            *changed_sensor = true; *save = true;
+        case MENU_LANGUAGE:
+            g_state.cfg.lang = (g_state.cfg.lang + 1) % LANG_COUNT;
+            *save = true;
             break;
         case MENU_MATTER_CODE:
             g_state.screen = UI_SCREEN_INFO;      /* show the payload detail */
@@ -312,7 +373,8 @@ static void menu_activate(bool *changed_units, bool *changed_sensor,
 static void handle_event(const app_event_t *e)
 {
     bool changed_setpoints = false, changed_unocc = false, changed_mode = false;
-    bool changed_units = false, changed_sensor = false, changed_fan = false, save = false;
+    bool changed_units = false, changed_fan = false, save = false;
+    int  boot_action = -1;   /* BOOT chooser selection to act on after unlock */
 
     app_lock();
     int scr = g_state.screen;
@@ -321,6 +383,10 @@ static void handle_event(const app_event_t *e)
             if (scr == UI_SCREEN_MENU) {
                 int n = MENU_COUNT;
                 g_state.menu_index = ((g_state.menu_index + e->value) % n + n) % n;
+            } else if (scr == UI_SCREEN_CONFIRM) {
+                int n = BOOT_OPT_COUNT;
+                g_state.menu_index = ((g_state.menu_index + e->value) % n + n) % n;
+                s_last_adjust_ms = now_ms();   /* keep the chooser awake */
             } else if (scr == UI_SCREEN_INFO) {
                 /* no rotation action on the info screen */
             } else {
@@ -331,8 +397,11 @@ static void handle_event(const app_event_t *e)
             break;
 
         case EVT_ENC_SW_SHORT:                     /* select / confirm */
-            if (scr == UI_SCREEN_MENU) {
-                menu_activate(&changed_units, &changed_sensor, &changed_fan, &save);
+            if (scr == UI_SCREEN_CONFIRM) {
+                boot_action = g_state.menu_index;  /* acted on after unlock */
+                if (boot_action == BOOT_OPT_CANCEL) g_state.screen = UI_SCREEN_HOME;
+            } else if (scr == UI_SCREEN_MENU) {
+                menu_activate(&changed_units, &changed_mode, &changed_fan, &save);
             } else if (scr == UI_SCREEN_INFO) {
                 g_state.screen = UI_SCREEN_MENU;   /* back to the list */
             } else {
@@ -345,15 +414,16 @@ static void handle_event(const app_event_t *e)
         case EVT_BTN_MODE_SHORT:                   /* mode cycle, or back */
             if (scr == UI_SCREEN_INFO) {
                 g_state.screen = UI_SCREEN_MENU;
-            } else if (scr == UI_SCREEN_MENU) {
-                g_state.screen = UI_SCREEN_HOME;
+            } else if (scr == UI_SCREEN_MENU || scr == UI_SCREEN_CONFIRM) {
+                g_state.screen = UI_SCREEN_HOME;   /* short press cancels the chooser */
             } else {
                 cycle_mode(); changed_mode = true; save = true;
             }
             break;
 
         case EVT_BTN_MENU_LONG:                    /* open / close settings */
-            if (scr == UI_SCREEN_MENU || scr == UI_SCREEN_INFO) {
+            if (scr == UI_SCREEN_MENU || scr == UI_SCREEN_INFO ||
+                scr == UI_SCREEN_CONFIRM) {
                 g_state.screen = UI_SCREEN_HOME;
             } else {
                 g_state.screen = UI_SCREEN_MENU;
@@ -361,15 +431,22 @@ static void handle_event(const app_event_t *e)
             }
             break;
 
+        case EVT_BTN_FAN_SHORT:                    /* dedicated fan-speed button */
+            /* Works from any screen: cycle AUTO -> LOW -> MED -> HIGH. The new
+             * speed shows in the home status bar and the FAN settings row. */
+            cycle_fan_speed();
+            changed_fan = true; save = true;
+            break;
+
         case EVT_ENC_SW_LONG:
             g_state.screen = UI_SCREEN_HOME;
             break;
 
-        case EVT_RESET_LONG:
-            app_unlock();
-            ESP_LOGW(TAG, "factory reset requested");
-            app_matter_factory_reset();
-            return;
+        case EVT_RESET_LONG:                       /* BOOT held 10 s -> chooser */
+            g_state.screen = UI_SCREEN_CONFIRM;
+            g_state.menu_index = BOOT_OPT_PAIRING;
+            s_last_adjust_ms = now_ms();           /* arms the chooser timeout */
+            break;
 
         case EVT_MATTER_SET_MODE:
             g_state.cfg.mode = e->value; save = true; break;
@@ -400,19 +477,36 @@ static void handle_event(const app_event_t *e)
     if (changed_mode)      app_matter_report_mode(snapshot.mode);
     if (changed_units)     app_matter_report_units(snapshot.fahrenheit);
     if (changed_fan)       app_matter_report_fan(snapshot.fan_speed);
-    if (changed_sensor)    thermistor_set_type((ntc_type_t)snapshot.ntc_type);
     if (save)              app_nvs_save(&snapshot);
+
+    /* BOOT chooser actions run outside the state lock (they open the Matter
+     * commissioning window or reboot). */
+    if (boot_action == BOOT_OPT_PAIRING) {
+        ESP_LOGW(TAG, "pairing: opening commissioning window");
+        app_matter_open_commissioning_window();
+        app_lock();
+        g_state.screen = UI_SCREEN_PAIRING;   /* show the code while the window is open */
+        app_unlock();
+    } else if (boot_action == BOOT_OPT_RESET) {
+        ESP_LOGW(TAG, "factory reset requested");
+        app_matter_factory_reset();           /* clears fabrics + Thread creds, reboots */
+    }
 }
 
 /* ---- UI task -------------------------------------------------------------- */
 
 static void build_model(ui_model_t *m)
 {
-    int ntc_type, fan_speed, occ_source;
+    int mode, fan_speed, occ_source, lang;
     bool occ_home_pref;
     app_lock();
     bool occ_live = g_state.occupied;
+    m->lang           = g_state.cfg.lang;
+    m->identify       = g_state.identify_until_ms != 0 &&
+                        now_ms() < g_state.identify_until_ms;
     m->temp_c100      = g_state.temp_c100;
+    m->humidity_pct100 = g_state.humidity_pct100;
+    m->humidity_valid  = g_state.humidity_valid;
     /* Show/edit the setpoints currently in effect: unoccupied when Away. */
     m->heat_set_c100  = occ_live ? g_state.cfg.heat_set_c100 : g_state.cfg.unocc_heat_c100;
     m->cool_set_c100  = occ_live ? g_state.cfg.cool_set_c100 : g_state.cfg.unocc_cool_c100;
@@ -429,10 +523,11 @@ static void build_model(ui_model_t *m)
     m->screen         = (ui_screen_t)g_state.screen;
     m->active_setpoint= g_state.active_setpoint;
     m->menu_index     = g_state.menu_index;
-    ntc_type          = g_state.cfg.ntc_type;
+    mode              = g_state.cfg.mode;
     fan_speed         = g_state.cfg.fan_speed;
     occ_source        = g_state.cfg.occ_source;
     occ_home_pref     = g_state.cfg.occ_manual_home;
+    lang              = g_state.cfg.lang;
     app_unlock();
 
     /* Matter setup payload — available whether or not we're commissioned, so
@@ -441,30 +536,48 @@ static void build_model(ui_model_t *m)
     if (s_code[0] == '\0') strncpy(s_code, "----", sizeof(s_code));
     m->pairing_code = s_code;
 
-    /* Settings-menu lines (LABEL: VALUE). PRESENCE shows the live resolved state
-     * (in sensor mode) or the manual preference (in manual mode). */
-    snprintf(s_menu_fan,    sizeof(s_menu_fan),    "FAN: %s", fan_speed_name(fan_speed));
-    snprintf(s_menu_presence, sizeof(s_menu_presence), "PRESENCE: %s",
-             (occ_source == OCC_SRC_SENSOR ? m->occupied : occ_home_pref) ? "HOME" : "AWAY");
-    snprintf(s_menu_occsrc, sizeof(s_menu_occsrc), "OCC SRC: %s",
-             occ_source == OCC_SRC_SENSOR ? "SENSOR" : "MANUAL");
-    snprintf(s_menu_units,  sizeof(s_menu_units),  "UNITS: %s", m->fahrenheit ? "F" : "C");
-    snprintf(s_menu_sensor, sizeof(s_menu_sensor), "SENSOR: TYPE %d",
-             ntc_type == NTC_TYPE_2 ? 2 : 3);
+    /* Settings-menu lines (LABEL: VALUE) in the selected language. PRESENCE shows
+     * the live resolved state (sensor mode) or the manual preference. */
+    snprintf(s_menu_mode,   sizeof(s_menu_mode),   "%s: %s",
+             i18n(lang, STR_MODE), i18n(lang, mode_msg_id(mode)));
+    snprintf(s_menu_fan,    sizeof(s_menu_fan),    "%s: %s",
+             i18n(lang, STR_FAN), i18n(lang, fan_speed_msg(fan_speed)));
+    snprintf(s_menu_presence, sizeof(s_menu_presence), "%s: %s", i18n(lang, STR_PRESENCE),
+             i18n(lang, (occ_source == OCC_SRC_SENSOR ? m->occupied : occ_home_pref)
+                        ? STR_HOME : STR_AWAY));
+    snprintf(s_menu_occsrc, sizeof(s_menu_occsrc), "%s: %s", i18n(lang, STR_SOURCE),
+             i18n(lang, occ_source == OCC_SRC_SENSOR ? STR_SENSOR : STR_MANUAL));
+    snprintf(s_menu_units,  sizeof(s_menu_units),  "%s: %s",
+             i18n(lang, STR_UNITS), m->fahrenheit ? "F" : "C");
+    snprintf(s_menu_language, sizeof(s_menu_language), "%s: %s",
+             i18n(lang, STR_LANGUAGE), i18n_lang_name(lang));
+    snprintf(s_menu_code,   sizeof(s_menu_code),   "%s >", i18n(lang, STR_MATTER_CODE));
+    s_menu_lines[MENU_MODE]        = s_menu_mode;
     s_menu_lines[MENU_FAN]         = s_menu_fan;
     s_menu_lines[MENU_PRESENCE]    = s_menu_presence;
     s_menu_lines[MENU_OCC_SRC]     = s_menu_occsrc;
     s_menu_lines[MENU_UNITS]       = s_menu_units;
-    s_menu_lines[MENU_SENSOR]      = s_menu_sensor;
-    s_menu_lines[MENU_MATTER_CODE] = "MATTER CODE >";
-    s_menu_lines[MENU_BACK]        = "BACK";
+    s_menu_lines[MENU_LANGUAGE]    = s_menu_language;
+    s_menu_lines[MENU_MATTER_CODE] = s_menu_code;
+    s_menu_lines[MENU_BACK]        = i18n(lang, STR_BACK);
     for (int i = 0; i < MENU_COUNT && i < UI_MENU_MAX; ++i) m->menu_lines[i] = s_menu_lines[i];
     m->menu_count = MENU_COUNT;
 
     /* Info screen (Settings → Matter code). */
-    m->info_title = "MATTER CODE";
+    m->info_title = i18n(lang, STR_MATTER_CODE);
     m->info_line1 = s_code;
-    m->info_line2 = "SCAN QR OR ENTER";
+    m->info_line2 = i18n(lang, STR_SCAN);
+
+    /* BOOT long-press chooser (overrides the list fields while active). */
+    if (m->screen == UI_SCREEN_CONFIRM) {
+        m->info_title = i18n(lang, STR_BOOT_OPTS);
+        s_menu_lines[BOOT_OPT_PAIRING] = i18n(lang, STR_PAIRING);
+        s_menu_lines[BOOT_OPT_RESET]   = i18n(lang, STR_FACTORY_RESET);
+        s_menu_lines[BOOT_OPT_CANCEL]  = i18n(lang, STR_CANCEL);
+        for (int i = 0; i < BOOT_OPT_COUNT && i < UI_MENU_MAX; ++i)
+            m->menu_lines[i] = s_menu_lines[i];
+        m->menu_count = BOOT_OPT_COUNT;
+    }
 }
 
 static void ui_task(void *arg)
@@ -483,14 +596,20 @@ static void ui_task(void *arg)
     s_btn_q = xQueueCreate(8, sizeof(button_event_t));
     button_init(s_btn_q);
     button_cfg_t b_push  = { .gpio = CONFIG_THERMO_PIN_BTN_PUSH, .id = BTN_ID_PUSH,
-                             .active_low = true, .long_press_ms = 3000 };
+                             .active_low = true, .long_press_ms = 5000 };
     button_cfg_t b_encsw = { .gpio = CONFIG_THERMO_PIN_ENC_SW, .id = BTN_ID_ENC_SW,
                              .active_low = true, .long_press_ms = 1000 };
     button_cfg_t b_reset = { .gpio = CONFIG_THERMO_PIN_RESET_BTN, .id = BTN_ID_RESET,
-                             .active_low = true, .long_press_ms = 5000 };
+                             .active_low = true, .long_press_ms = 10000 };
     button_add(&b_push);
     button_add(&b_encsw);
     button_add(&b_reset);
+    /* Optional dedicated fan-speed button (omit when the pin is -1). */
+    if (CONFIG_THERMO_PIN_BTN_FAN >= 0) {
+        button_cfg_t b_fan = { .gpio = CONFIG_THERMO_PIN_BTN_FAN, .id = BTN_ID_FAN,
+                               .active_low = true, .long_press_ms = 3000 };
+        button_add(&b_fan);
+    }
     xTaskCreate(button_task, "button", 3072, NULL, 5, NULL);
 
     ui_oled_config_t oc = {
@@ -505,6 +624,7 @@ static void ui_task(void *arg)
         .sh1106 = false,
 #endif
         .i2c_hz = 400000,
+        .ext_bus = s_i2c_bus,      /* reuse the shared bus (also used by SHT40) */
     };
     ui_oled_init(&oc);
     app_lock();
@@ -524,10 +644,13 @@ static void ui_task(void *arg)
             handle_event(&e);
         }
 
-        /* ADJUST auto-timeout back to HOME. */
+        /* ADJUST / BOOT-chooser auto-timeout back to HOME. */
         app_lock();
         if (g_state.screen == UI_SCREEN_ADJUST &&
             (now_ms() - s_last_adjust_ms) > CONFIG_THERMO_ADJUST_TIMEOUT_MS) {
+            g_state.screen = UI_SCREEN_HOME;
+        } else if (g_state.screen == UI_SCREEN_CONFIRM &&
+                   (now_ms() - s_last_adjust_ms) > BOOT_MENU_TIMEOUT_MS) {
             g_state.screen = UI_SCREEN_HOME;
         }
         app_unlock();
@@ -543,10 +666,34 @@ static void ui_task(void *arg)
     }
 }
 
+/* Matter Identify -> show the IDENTIFY banner on the OLED for `seconds`.
+ * Called from the Matter identify callback (there is no status LED). */
+void app_on_identify(int seconds)
+{
+    if (seconds <= 0) seconds = 10;
+    app_lock();
+    g_state.identify_until_ms = now_ms() + (int64_t)seconds * 1000;
+    app_unlock();
+}
+
 /* ---- entry ---------------------------------------------------------------- */
 
 void app_control_start(void)
 {
+    /* One shared I2C master bus for the OLED and (if fitted) the SHT40 —
+     * created here, before the tasks, so both can add their device to it. */
+    i2c_master_bus_config_t bus_cfg = {
+        .i2c_port = 0,
+        .sda_io_num = CONFIG_THERMO_PIN_I2C_SDA,
+        .scl_io_num = CONFIG_THERMO_PIN_I2C_SCL,
+        .clk_source = I2C_CLK_SRC_DEFAULT,
+        .flags.enable_internal_pullup = true,
+    };
+    if (i2c_new_master_bus(&bus_cfg, &s_i2c_bus) != ESP_OK) {
+        ESP_LOGE(TAG, "shared I2C bus init failed");
+        s_i2c_bus = NULL;
+    }
+
     xTaskCreate(sensor_task,  "sensor",  4096, NULL, 5, NULL);
     xTaskCreate(control_task, "control", 4096, NULL, 6, NULL);
     xTaskCreate(ui_task,      "ui",      5120, NULL, 4, NULL);

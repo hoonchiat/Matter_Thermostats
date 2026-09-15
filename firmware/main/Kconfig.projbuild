@@ -1,13 +1,6 @@
 menu "Matter Thermostat"
 
     menu "Pin assignment"
-        config THERMO_PIN_NTC_ADC
-            int "NTC thermistor ADC GPIO (ADC1)"
-            default 1
-            help
-                GPIO for the 10K NTC divider node. Must be an ADC1 channel
-                (GPIO0..GPIO6 on the ESP32-C6).
-
         config THERMO_PIN_I2C_SDA
             int "OLED I2C SDA GPIO"
             default 6
@@ -27,6 +20,15 @@ menu "Matter Thermostat"
         config THERMO_PIN_BTN_PUSH
             int "Push button GPIO"
             default 3
+
+        config THERMO_PIN_BTN_FAN
+            int "Fan-speed button GPIO (-1 = not used)"
+            default 14
+            help
+                Dedicated momentary push button that cycles the fan speed
+                Auto -> Low -> Med -> High -> Auto on each short press.
+                Active-low (internal pull-up; wire to GND). Set to -1 to
+                omit the button and use only the settings menu / Matter.
 
         config THERMO_PIN_RELAY_W
             int "Relay W (heat) GPIO"
@@ -62,41 +64,19 @@ menu "Matter Thermostat"
                 Optional. A motion/occupancy sensor input. Leave at -1 to use the
                 manual Home/Away toggle in the settings menu instead.
 
-        config THERMO_PIN_STATUS_LED
-            int "Status RGB LED (WS2812) GPIO"
-            default 8
         config THERMO_PIN_RESET_BTN
             int "Factory-reset button GPIO (BOOT)"
             default 9
     endmenu
 
-    menu "Thermistor / sensing"
-        choice THERMO_NTC_TYPE
-            prompt "NTC curve"
-            default THERMO_NTC_TYPE3
-            config THERMO_NTC_TYPE2
-                bool "10K Type 2 (10K-2)"
-            config THERMO_NTC_TYPE3
-                bool "10K Type 3 (10K-3)"
-        endchoice
+    menu "Temperature / humidity sensor"
+        comment "Room sensor: Sensirion SHT40 (I2C, temperature + humidity)"
 
-        config THERMO_DIVIDER_RFIX_OHM
-            int "Divider fixed reference resistor (ohms)"
-            default 10000
-        config THERMO_DIVIDER_VREF_MV
-            int "Divider top-rail voltage (mV)"
-            default 3300
+        config THERMO_SHT40_ADDR
+            hex "SHT40 I2C address"
+            default 0x44
             help
-                Nominal voltage at the top of the NTC divider. Trim to your
-                measured 3.3V rail for best accuracy.
-
-        config THERMO_ADC_MEDIAN_N
-            int "Raw ADC median filter window (samples)"
-            default 5
-        config THERMO_EMA_ALPHA_PCT
-            int "Temperature EMA smoothing alpha (percent)"
-            default 30
-            range 1 100
+                0x44 for SHT40-AD1B (default), 0x45 for -BD1B. Shares the OLED bus.
     endmenu
 
     menu "Control defaults"

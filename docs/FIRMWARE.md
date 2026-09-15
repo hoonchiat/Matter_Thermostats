@@ -17,12 +17,13 @@ firmware/
 │   ├── app_nvs.cpp/.h        # load/save persisted config
 │   └── Kconfig.projbuild     # all pins & defaults exposed to menuconfig
 └── components/
-    ├── thermistor/           # ADC + NTC(Type2/3) → °C          [implemented]
+    ├── sht4x/                # SHT40 I2C temp + humidity         [implemented]
     ├── rotary_encoder/       # PCNT quadrature + switch          [implemented]
     ├── button/               # debounce + short/long press       [implemented]
     ├── thermostat_core/      # mode/hysteresis/cycle-timer law    [implemented, pure]
     ├── relays/               # HVAC output driver + fan taps      [implemented]
     ├── occupancy/            # PIR + vacancy timeout / Home-Away  [implemented]
+    ├── i18n/                 # UI string catalog: EN/FR/ES/DE     [implemented, pure]
     └── ui_oled/              # SSD1306 screens + 5x7 font + menu   [implemented]
 ```
 
@@ -64,7 +65,7 @@ safety logic isolated from Matter/driver churn.
 
 | Task | Prio | Period | Responsibility |
 |---|---|---|---|
-| `sensor_task` | med | 1 Hz | sample ADC, convert, filter, publish temp + fault |
+| `sensor_task` | med | 1 Hz | read the SHT40 over I²C, publish temperature + humidity + fault |
 | `control_task` | high | 0.5 s | run `thermostat_core`, drive relays, timers, push Matter attrs |
 | `ui_task` | low | event + 10 Hz redraw | encoder/button handling, OLED rendering |
 | CHIP event loop | (stack) | — | Matter interaction model, Thread |
@@ -172,8 +173,14 @@ The reference implementation with the full gate is in
   selection.
 - **Encoder switch (select)** → enter/confirm menu items.
 - **Push button** → short: cycle mode (Off→Heat→Cool→Auto) or "back" in a menu; long
-  (≥ 3 s on home): open settings menu.
-- **BOOT/reset** → long (≥ 5 s): factory-reset confirmation.
+  (≥ 5 s on home): open settings menu.
+- **Fan-speed button** → short: `EVT_BTN_FAN_SHORT` cycles the fan speed
+  (Auto→Low→Med→High) from any screen; the new speed persists and mirrors to the Matter Fan
+  Control cluster. Optional (`CONFIG_THERMO_PIN_BTN_FAN`, −1 disables).
+- **BOOT/reset** → long (≥ 10 s): `EVT_RESET_LONG` opens the **`UI_SCREEN_CONFIRM`** chooser
+  (Pairing / Factory reset / Cancel) instead of resetting immediately. Rotate to select,
+  press to confirm; **Pairing** calls `app_matter_open_commissioning_window()`, **Factory
+  reset** calls `app_matter_factory_reset()`. The chooser auto-dismisses after ~15 s.
 - **Debounce:** `components/button` debounces (default 30 ms) and emits SHORT on release
   and LONG at the threshold.
 
@@ -186,8 +193,9 @@ Fault). See [UI.md](UI.md).
 
 `app_matter.cpp` creates the endpoints/clusters and registers callbacks:
 
-- **Endpoints:** Root (0), Thermostat 0x0301 (1), Fan 0x002B (2, Fan Control), and
-  Occupancy Sensor 0x0107 (3, Occupancy Sensing).
+- **Endpoints:** Root (0), Thermostat 0x0301 (1), Fan 0x002B (2, Fan Control),
+  Occupancy Sensor 0x0107 (3, Occupancy Sensing), and — only with an SHT40 — Humidity
+  Sensor 0x0307 (4, Relative Humidity Measurement).
 - **Attribute update callback** (remote write, `PRE_UPDATE`): translate `SystemMode`,
   `OccupiedHeatingSetpoint`, `OccupiedCoolingSetpoint`, `TemperatureDisplayMode`, and
   `FanControl::FanMode`/`PercentSetting` writes → `app_event`s → update `app_state` →
@@ -197,7 +205,8 @@ Fault). See [UI.md](UI.md).
 - **Pairing:** mirrors the esp-matter `light` example — `esp_matter::start(app_event_cb)`,
   `PrintOnboardingCodes(BLE)`, and re-open a DNS-SD commissioning window on last-fabric
   removal.
-- **Identify:** blink the status LED.
+- **Identify:** show a centered **IDENTIFY** banner on the OLED (`app_on_identify()`) —
+  there is no status LED.
 - Temperatures cross the boundary in Matter's units: **0.01 °C signed int16** for
   `LocalTemperature` and the setpoints.
 
@@ -221,7 +230,7 @@ are stored by the stack in its own NVS partition.
 ```bash
 cd firmware
 idf.py set-target esp32c6
-idf.py menuconfig      # → "Matter Thermostat" : pins, thermistor type, deadband, timers…
+idf.py menuconfig      # → "Matter Thermostat" : pins, SHT40 addr, deadband, timers…
 idf.py build
 idf.py -p <PORT> flash monitor
 ```
@@ -234,15 +243,15 @@ OTA A/B + NVS). See `firmware/sdkconfig.defaults` and `firmware/sdkconfig.defaul
 
 ## 8. Testing strategy
 
-- **Host unit tests** for `thermistor` (R→T against known points), `thermostat_core`
-  (hysteresis boundaries, min-off/min-on gating, auto dead-zone, fan-speed levels,
-  fail-safe), and `occupancy` (vacancy-timeout boundaries, clock-anomaly fail-safe). These
-  components are pure C with no ESP dependency, so they compile and run on a PC:
+- **Host unit tests** for `thermostat_core` (hysteresis boundaries, min-off/min-on gating,
+  auto dead-zone, fan-speed levels, fail-safe), `occupancy` (vacancy-timeout boundaries,
+  clock-anomaly fail-safe), and `sht4x` (Sensirion CRC-8 vector + tick→°C/%RH conversions).
+  These components are pure C with no ESP dependency, so they compile and run on a PC:
   `cd firmware/test/host && make`.
 - **Host UI preview:** `make preview` renders every OLED screen to the terminal as ASCII
   (the `ui_oled` drawing path compiles under `UI_OLED_HOST`), so layouts are verifiable
   without hardware.
-- **On-target smoke:** verify ADC↔temp with a reference thermometer; encoder count
+- **On-target smoke:** verify SHT40 temp/humidity against a reference meter; encoder count
   stability; relay actuation with an LED load before wiring 24 VAC; commissioning against a
   real Border Router + controller.
 - **Soak:** confirm min-off never violated under rapid setpoint changes; Thread rejoin

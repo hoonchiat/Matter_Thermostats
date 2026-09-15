@@ -33,6 +33,7 @@ using namespace chip::app::Clusters;
 static uint16_t s_ep = 0;       /* thermostat endpoint id */
 static uint16_t s_fan_ep = 0;   /* fan (Fan Control) endpoint id */
 static uint16_t s_occ_ep = 0;   /* occupancy sensor endpoint id */
+static uint16_t s_hum_ep = 0;   /* humidity sensor endpoint id (SHT40 only) */
 
 /* ---- mode conversion (Matter SystemMode <-> thermo_mode_t) ---------------- */
 
@@ -137,7 +138,8 @@ static esp_err_t app_identification_cb(identification::callback_type_t type,
                                        uint8_t effect_variant, void *priv)
 {
     ESP_LOGI(TAG, "identify: ep=%u effect=%u", endpoint_id, effect_id);
-    /* TODO(app): blink the status LED while identifying. */
+    /* No status LED — surface Identify as an on-screen banner instead. */
+    app_on_identify(15);
     return ESP_OK;
 }
 
@@ -253,6 +255,15 @@ int app_matter_start(void)
     if (!oep) { ESP_LOGE(TAG, "occupancy endpoint failed"); return ESP_FAIL; }
     s_occ_ep = endpoint::get_id(oep);
 
+    /* Endpoint 4: a Humidity Sensor (0x0307). The SHT40 is the only room sensor,
+     * so humidity is always available.
+     * TODO(matter): humidity_sensor::config_t field names track the SDK
+     * version (e.g. relative_humidity_measurement.measured_value). */
+    humidity_sensor::config_t hum_cfg;
+    endpoint_t *hep = humidity_sensor::create(node, &hum_cfg, ENDPOINT_FLAG_NONE, NULL);
+    if (!hep) { ESP_LOGE(TAG, "humidity endpoint failed"); return ESP_FAIL; }
+    s_hum_ep = endpoint::get_id(hep);
+
     esp_matter::start(app_device_event_cb);
 
     /* Print the QR + manual pairing code to the console, same as the light
@@ -265,8 +276,8 @@ int app_matter_start(void)
     esp_matter::console::init();
 #endif
 
-    ESP_LOGI(TAG, "matter started: thermostat ep=%u, fan ep=%u, occ ep=%u",
-             s_ep, s_fan_ep, s_occ_ep);
+    ESP_LOGI(TAG, "matter started: thermostat ep=%u, fan ep=%u, occ ep=%u, hum ep=%u",
+             s_ep, s_fan_ep, s_occ_ep, s_hum_ep);
     return ESP_OK;
 }
 
@@ -288,6 +299,19 @@ void app_matter_report_temperature(int temp_c100, bool fault)
         val = esp_matter_nullable_int16(nullable<int16_t>((int16_t)temp_c100));
     }
     attribute::update(s_ep, Thermostat::Id, Thermostat::Attributes::LocalTemperature::Id, &val);
+}
+
+void app_matter_report_humidity(int pct100, bool valid)
+{
+    if (!s_hum_ep) return;
+    esp_matter_attr_val_t val;
+    if (valid) {
+        val = esp_matter_nullable_uint16(nullable<uint16_t>((uint16_t)pct100));
+    } else {
+        val = esp_matter_nullable_uint16(nullable<uint16_t>());          /* null */
+    }
+    attribute::update(s_hum_ep, RelativeHumidityMeasurement::Id,
+                      RelativeHumidityMeasurement::Attributes::MeasuredValue::Id, &val);
 }
 
 void app_matter_report_running_state(bool heat, bool cool, bool fan)
@@ -356,6 +380,33 @@ void app_matter_report_occupancy(bool occupied)
 void app_matter_factory_reset(void)
 {
     esp_matter::factory_reset();   /* clears fabrics + Thread creds, then reboots */
+}
+
+void app_matter_open_commissioning_window(void)
+{
+    /* User-initiated pairing (BOOT long-press -> "Pairing"): open a basic
+     * commissioning window so a controller can commission the device, or add
+     * itself as another admin if it is already commissioned. Advertises over
+     * BLE + DNS-SD for 5 minutes.
+     *
+     * TODO(matter): the manager call and locking helper can shift between SDK
+     * versions; cross-check against docs/MATTER.md and the light example. We
+     * take the CHIP stack lock because this runs on the app's UI task, not the
+     * Matter event loop. */
+    chip::DeviceLayer::PlatformMgr().LockChipStack();
+    auto &mgr = chip::Server::GetInstance().GetCommissioningWindowManager();
+    if (!mgr.IsCommissioningWindowOpen()) {
+        CHIP_ERROR err = mgr.OpenBasicCommissioningWindow(
+            chip::System::Clock::Seconds16(300),
+            chip::CommissioningWindowAdvertisement::kAllSupported);
+        if (err != CHIP_NO_ERROR)
+            ESP_LOGE(TAG, "open commissioning window: %" CHIP_ERROR_FORMAT, err.Format());
+        else
+            ESP_LOGI(TAG, "commissioning window opened (user pairing)");
+    } else {
+        ESP_LOGI(TAG, "commissioning window already open");
+    }
+    chip::DeviceLayer::PlatformMgr().UnlockChipStack();
 }
 
 void app_matter_get_pairing_code(char *out, int out_len)

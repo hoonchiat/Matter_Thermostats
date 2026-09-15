@@ -8,8 +8,8 @@
 
 ## 1. Overview
 
-A wall-mount / bench smart thermostat that measures room temperature with a standard
-HVAC-grade 10 kΩ NTC thermistor, regulates a conventional 24 VAC heating/cooling system,
+A wall-mount / bench smart thermostat that measures room temperature and humidity with a
+Sensirion **SHT40** I²C sensor, regulates a conventional 24 VAC heating/cooling system,
 and exposes itself to the smart-home ecosystem as a standard **Matter Thermostat** over a
 **Thread** mesh network. All control is local; the cloud is never in the loop.
 
@@ -19,9 +19,9 @@ and exposes itself to the smart-home ecosystem as a standard **Matter Thermostat
    *any* Matter controller (Apple Home, Google Home, Alexa, SmartThings, Home Assistant).
 2. **Thread-native:** Use the ESP32-C6's built-in 802.15.4 radio; join an existing Thread
    network, low-power and resilient mesh, BLE only for commissioning.
-3. **Accurate sensing:** Support the two dominant HVAC thermistor curves — **10 kΩ
-   Type 2** and **10 kΩ Type 3** — with datasheet-grade conversion accuracy (±0.3 °C over
-   the comfort range after calibration).
+3. **Accurate sensing:** Use a factory-calibrated **SHT40** digital sensor for temperature
+   **and relative humidity** — ±0.2 °C / ±1.8 %RH typical, within the ±0.3 °C comfort-range
+   target with no board-level calibration.
 4. **Great local UX:** Full standalone operation without a phone — rotary encoder to set
    temperature, push button for mode/menu, OLED for status.
 5. **Real HVAC control:** Drive conventional relays/SSRs (W/Y/G/O·B) with proper
@@ -49,7 +49,7 @@ used throughout this spec:
 | OLED 0.95″ I²C | **SSD1306 128×64 monochrome OLED**, I²C (0.96″ is the ubiquitous part; 0.91″ 128×32 is a drop-in with a smaller layout) | 0.95″/0.96″ mono OLEDs are I²C; the true 0.95″ *color* part (SSD1331) is **SPI-only** and would change the pin map — see [HARDWARE](HARDWARE.md#oled-options). SH1106 is firmware-selectable. |
 | Digital rotary switch | **Incremental quadrature rotary encoder** (e.g. Bourns/ALPS EC11) with detents and an **integrated momentary push switch** | "Digital" ⇒ incremental A/B encoder (not an analog pot, not an absolute encoder). |
 | Push button | A **dedicated momentary push button**, separate from the encoder's shaft switch | Two distinct inputs give a cleaner UX (encoder-press = select, button = mode/back). |
-| 10K Type 2/3 | **10 kΩ NTC thermistor**, HVAC **Type II or Type III** R-T curve, runtime-selectable | These are the two most common North-American HVAC thermistor curves. See [§7](#7-temperature-sensing). |
+| 10K Type 2/3 | Originally a **10 kΩ NTC thermistor** (Type II/III); **superseded by a Sensirion SHT40** digital temp + humidity sensor | The SHT40 is factory-calibrated, needs no analog front-end, and adds humidity. See [§7](#7-temperature-sensing). |
 
 If the true intent was a **color 0.95″ SSD1331** display, only the display transport
 (SPI instead of I²C) and three pins change; the rest of the design is unaffected.
@@ -61,15 +61,13 @@ If the true intent was a **color 0.95″ SSD1331** display, only the display tra
 ```
                  ┌──────────────────────────────────────────────────┐
                  │                    ESP32-C6                        │
-   10K NTC ─┬────┤ ADC1_CH1  ── Thermistor front-end (divider+filter)│
-  (Type2/3) │    │                                                   │
-        Rfix│    │ I2C0 (SDA/SCL) ── SSD1306 OLED 128x64             │
-            │    │                                                   │
-           GND   │ PCNT ─────────── Rotary encoder A/B               │
+                 │ I2C0 (SDA/SCL) ─ SHT40 (temp+RH) + SSD1306 OLED  │
+                 │                  (OLED is the only status surface)│
+                 │                                                   │
+                 │ PCNT ─────────── Rotary encoder A/B               │
                  │ GPIO ─────────── Encoder switch + Push button     │
                  │                                                   │
                  │ GPIO ×4 ──────── Relay drivers  W / Y / G / O·B ──┼──▶ 24VAC HVAC
-                 │ RMT  ─────────── Status RGB LED (WS2812)          │
                  │                                                   │
                  │ 802.15.4 radio ─ Thread mesh  ◀── Border Router  │
                  │ BLE ──────────── Commissioning only              │
@@ -83,11 +81,12 @@ If the true intent was a **color 0.95″ SSD1331** display, only the display tra
                 ├ thermostat_core: mode/hysteresis/cycle-timer control law
                 ├ ui_oled: screen state machine & rendering
    Domain       ├ matter data-model glue (endpoint/cluster ↔ app state)
-   Drivers      ├ thermistor · rotary_encoder · button · relays · status LED
+   Domain       ├ i18n: UI string catalog (EN/FR/ES/DE)
+   Drivers      ├ sht4x · rotary_encoder · button · relays
    Middleware   ├ ESP-Matter (Data Model, Interaction Model)
                 ├ CHIP / connectedhomeip stack
    Network      ├ OpenThread (802.15.4) · mDNS/SRP · BLE (commissioning)
-   RTOS/HAL     └ ESP-IDF (FreeRTOS, ADC, I2C, PCNT, RMT, GPIO, NVS)
+   RTOS/HAL     └ ESP-IDF (FreeRTOS, I2C, PCNT, RMT, GPIO, NVS)
 ```
 
 See [FIRMWARE.md](FIRMWARE.md) for tasks, queues, and the control algorithm, and
@@ -99,13 +98,13 @@ See [FIRMWARE.md](FIRMWARE.md) for tasks, queues, and the control algorithm, and
 
 | ID | Requirement |
 |---|---|
-| FR-1 | Measure room temperature from a 10 kΩ Type 2 **or** Type 3 NTC, selectable at build/runtime, and report it as the Matter `LocalTemperature` attribute in 0.01 °C units. |
+| FR-1 | Measure room temperature from the SHT40 I²C sensor and report it as the Matter `LocalTemperature` attribute in 0.01 °C units. |
 | FR-2 | Provide heating and cooling setpoints, adjustable locally (encoder) and remotely (Matter), within configurable min/max limits. |
 | FR-3 | Support System Modes: **Off, Heat, Cool, Auto** (and expose Fan-Only). |
 | FR-4 | Drive HVAC outputs with configurable **hysteresis (deadband)** and **minimum on/off cycle timers** to protect the compressor. |
 | FR-5 | Display current temperature, setpoint, mode, call-for-heat/cool status, and network status on the OLED. |
 | FR-6 | Commission over BLE and operate over Thread; rejoin automatically after power loss. |
-| FR-7 | Persist user settings (setpoints, mode, units, calibration, deadband, thermistor type) across reboots in NVS. |
+| FR-7 | Persist user settings (setpoints, mode, units, calibration, deadband) across reboots in NVS. |
 | FR-8 | Support °C/°F display (Matter `TemperatureDisplayMode`); internal math is always °C. |
 | FR-9 | Provide a local **factory reset** (decommission) via long-press, with on-screen confirmation. |
 | FR-10 | Show the Matter commissioning QR/pairing code on the OLED while uncommissioned. |
@@ -115,6 +114,10 @@ See [FIRMWARE.md](FIRMWARE.md) for tasks, queues, and the control algorithm, and
 | FR-14 | Allow **remote override** from Matter of System Mode, heating/cooling setpoints, and fan speed; local and remote state stay synchronized and overrides persist. |
 | FR-15 | Present a modern, legible OLED UI (status bar with mode/fan/link indicators, large temperature, setpoint pill), taking cues from the Honeywell Home thermostats. |
 | FR-16 | Support **occupancy** via a PIR/occupancy sensor (with a vacancy timeout) **or** a manual Home/Away toggle (selectable). Use the Matter Thermostat **OCC feature** with separate **unoccupied setpoints** (writable remotely and locally); publish the resolved presence via the `Occupancy` attribute and an Occupancy Sensor endpoint. |
+| FR-17 | Use a **Sensirion SHT40** I²C room sensor for temperature **+ relative humidity**; show humidity on the OLED and expose it as a Matter Humidity Sensor. Units (°C/°F) and the 0.5°-per-step setpoint adjust apply. |
+| FR-18 | Provide a settings-menu **MODE** selector — Heat / Cool / Fan-only / Auto — in addition to the push-button mode cycle (which also includes Off). |
+| FR-19 | Provide a settings-menu **LANGUAGE** selector for the on-screen UI — **English, French, Spanish, German** — persisted across reboots. |
+| FR-20 | Convey all device status on the OLED (pairing, heat/cool call, idle, sensor fault, Matter Identify); no status LED. |
 
 ## 5. Non-functional requirements
 
@@ -135,41 +138,41 @@ See [FIRMWARE.md](FIRMWARE.md) for tasks, queues, and the control algorithm, and
 Full detail in [HARDWARE.md](HARDWARE.md). Headlines:
 
 - **MCU module:** ESP32-C6-WROOM-1 (or -1U w/ ext. antenna). 8 MB flash recommended.
-- **Sensor front-end:** 10 kΩ NTC in a divider with a **10 kΩ 0.1 % reference resistor**,
-  RC low-pass to the ADC, series/ESD protection. ADC read with curve-fit calibration.
+- **Room sensor:** Sensirion **SHT40** I²C temperature + humidity sensor on the shared OLED
+  bus at 0x44 (no analog front-end, no ADC).
 - **Display:** SSD1306 128×64 I²C @ 0x3C.
 - **Input:** EC11 rotary encoder (A/B/SW) + one momentary push button; BOOT button reused
   for factory reset.
 - **Output:** 4× relay or SSR channels with flyback/snubber, opto-isolation recommended
   for 24 VAC.
 - **Power:** USB-C (5 V) for bench; on-board 24 VAC→5 V (isolated) + 3.3 V rail for field.
-- **Status:** on-board addressable RGB LED (WS2812) for at-a-glance state.
+- **Status:** shown entirely on the OLED (pairing, heat/cool call, idle, fault, identify);
+  there is no status LED.
 
-## 7. Temperature sensing
+## 7. Temperature (& humidity) sensing
 
-The device supports the two common North-American HVAC 10 kΩ NTC curves:
+The room sensor is a **Sensirion SHT40** — a digital, factory-calibrated temperature +
+relative-humidity sensor on I²C (0x44), sharing the OLED bus so it needs no extra GPIO and
+no analog front-end. Humidity is shown on the OLED and published as a Matter Humidity Sensor;
+the user calibration offset (FR-11) and the units/step settings apply to temperature.
 
-- **10 kΩ Type 2 ("10K-2")** — nominal β₍25/85₎ ≈ 3891 K
-- **10 kΩ Type 3 ("10K-3")** — nominal β₍25/85₎ ≈ 3976 K
+> The original prompt asked for a "10K Type 2/3" thermistor. That analog NTC front-end has
+> been **replaced by the SHT40**: it is factory-calibrated (no per-curve R-T tables, no
+> divider/ADC calibration), meets the ±0.3 °C comfort target out of the box, and adds
+> relative humidity for free.
 
-> ⚠️ **Type 2 and Type 3 are *not* interchangeable.** They share R₂₅ = 10 kΩ but diverge
-> substantially away from 25 °C. Using the wrong curve produces errors of several degrees.
-> The β values above are nominal; **the authoritative source is always the sensor
-> manufacturer's R-T table.** This design therefore uses a **piecewise-linear lookup
-> table (LUT)** as the primary conversion method, generated per curve from the datasheet
-> (see [`tools/gen_ntc_lut.py`](../tools/gen_ntc_lut.py)), with a Steinhart-Hart / β model
-> as a fallback and for interpolation.
-
-Conversion pipeline (implemented in `components/thermistor`):
+Conversion pipeline (implemented in `components/sht4x`):
 
 ```
-raw ADC → (median-of-N) → mV (ADC calibration) → R_ntc = R_fix · V/(Vref−V)
-        → LUT interpolation (per Type) → °C → EMA smoothing → + user offset → LocalTemperature
+I²C 0xFD (high-precision) → 6 bytes (T, CRC, RH, CRC) → CRC-8 check
+   → T[°C] = −45 + 175·S_T/65535
+   → RH[%] = clamp(−6 + 125·S_RH/65535, 0, 100)
+   → + user offset → LocalTemperature / RelativeHumidity
 ```
 
-Fault detection: an ADC reading pinned at the rails implies an open or shorted sensor →
-report fault, force outputs off (FR-12). Math, divider topology, and accuracy budget are
-in [HARDWARE.md §Thermistor](HARDWARE.md#thermistor-front-end).
+Fault detection: a failed read or CRC mismatch → report fault, blank `LocalTemperature`,
+force outputs off (FR-12). Datasheet accuracy and wiring are in
+[HARDWARE.md §3](HARDWARE.md#3-room-sensor-sht40).
 
 ## 8. Control behavior
 
@@ -211,6 +214,8 @@ Full state table and pseudocode in [FIRMWARE.md §Control](FIRMWARE.md#control-a
     `PercentSetting` — the fan speed, viewable and overridable from Matter.
 - **Endpoint 3** — Occupancy Sensor (`0x0107`):
   - `Occupancy Sensing` (0x0406) — `Occupancy` bit reflecting the resolved Home/Away state.
+- **Endpoint 4** — Humidity Sensor (`0x0307`, only with the SHT40):
+  - `Relative Humidity Measurement` (0x0405) — `MeasuredValue` in %RH × 100.
 
 All three of System Mode, setpoints, and fan speed can be **overridden remotely** and stay
 in sync with the local UI. Full attribute/command list, ranges, and the local↔Matter
@@ -226,8 +231,8 @@ synchronization rules are in [MATTER.md](MATTER.md).
 
 ## 11. Persistence
 
-NVS namespace `thermo_cfg` stores: `sysMode`, `heatSet`, `coolSet`, `deadband`,
-`tempOffset`, `units`, `ntcType`, `minOff`, `minOn`, `hpReversing`, `brightness`, `fan`
+NVS namespace `thermo_cfg` stores: `mode`, `heat`, `cool`, `deadband`,
+`offset`, `units_f`, `lang`, `min_off`, `min_on`, `hp`, `bright`, `fan`
 (fan speed), `occSrc`/`occHome` (occupancy source + manual Home/Away), and `uHeat`/`uCool`
 (unoccupied setpoints). Matter's own fabric/credential storage is separate (managed by the stack).
 
@@ -250,7 +255,7 @@ See [`hardware/bom.csv`](../hardware/bom.csv).
 | **Matter** | Application-layer smart-home interoperability standard (CSA). |
 | **Thread** | Low-power IPv6 802.15.4 mesh networking. |
 | **Border Router** | Bridges the Thread mesh to your Wi-Fi/Ethernet LAN. |
-| **NTC** | Negative-Temperature-Coefficient thermistor. |
+| **SHT40** | Sensirion digital I²C temperature + relative-humidity sensor. |
 | **Deadband / hysteresis** | Temperature gap between turn-on and turn-off to avoid chatter. |
 | **Short-cycling** | Rapid compressor on/off; damaging — prevented by min-off timers. |
 | **W / Y / G / O·B** | HVAC control wires: heat / cool(compressor) / fan / reversing valve. |

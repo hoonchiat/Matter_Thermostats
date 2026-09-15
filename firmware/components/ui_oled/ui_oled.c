@@ -12,6 +12,7 @@
  * I2C / esp_lcd panel bring-up and flush are compiled out in that mode.
  */
 #include "ui_oled.h"
+#include "i18n.h"
 
 #include <string.h>
 #include <stdio.h>
@@ -224,15 +225,16 @@ static void fmt_temp(char *out, size_t n, int c100, bool fahrenheit)
     }
 }
 
-static const char *mode_str(int mode)
+/* Map a thermo_mode_t to its i18n message id (for the status bar). */
+static int mode_msg(int mode)
 {
     switch (mode) {
-        case 0:  return "OFF";
-        case 1:  return "HEAT";
-        case 2:  return "COOL";
-        case 3:  return "AUTO";
-        case 4:  return "FAN";
-        default: return "?";
+        case 1:  return STR_M_HEAT;
+        case 2:  return STR_M_COOL;
+        case 3:  return STR_M_AUTO;
+        case 4:  return STR_M_FAN;
+        case 0:
+        default: return STR_M_OFF;
     }
 }
 
@@ -255,7 +257,7 @@ static void draw_status_bar(const ui_model_t *m)
     int x = 2;
     if (m->mode == 1) { draw_tri_up(x + 3, 2, 5); x += 9; }        /* HEAT */
     else if (m->mode == 2) { draw_tri_down(x + 3, 2, 5); x += 9; } /* COOL */
-    draw_text(x, 2, mode_str(m->mode), 1);
+    draw_text(x, 2, i18n(m->lang, mode_msg(m->mode)), 1);
 
     int rx = s.cfg.width;
     rx -= 5; draw_conn(rx, 2, m->commissioned);                    /* link dot */
@@ -281,7 +283,9 @@ static void draw_setpoint_pill(const ui_model_t *m)
         draw_temp_unit(x, ty, m->cool_set_c100, m->fahrenheit, 1);
     } else {
         int set = (m->active_setpoint == 1) ? m->cool_set_c100 : m->heat_set_c100;
-        int x = draw_text(10, ty, "SET ", 1);
+        char lbl[16];
+        snprintf(lbl, sizeof(lbl), "%s ", i18n(m->lang, STR_SET));
+        int x = draw_text(10, ty, lbl, 1);
         draw_temp_unit(x, ty, set, m->fahrenheit, 1);
     }
     /* Calling indicator: a filled dot at the pill's right edge. */
@@ -301,23 +305,36 @@ static void render_home(const ui_model_t *m)
 
     draw_setpoint_pill(m);
 
-    const char *rs = m->calling_heat ? "HEATING" :
-                     (m->calling_cool ? "COOLING" : (m->fan_on ? "FAN ON" : "IDLE"));
+    const char *rs = i18n(m->lang, m->calling_heat ? STR_HEATING :
+                     (m->calling_cool ? STR_COOLING : (m->fan_on ? STR_FAN_ON : STR_IDLE)));
     draw_text(2, 56, rs, 1);
 
-    /* Away indicator (occupancy setback active). */
+    /* Bottom-right cluster: AWAY badge, then humidity (right-aligned). */
+    int rx = s.cfg.width - 2;
     if (!m->occupied) {
-        const char *aw = "AWAY";
-        draw_text(s.cfg.width - text_width(aw, 1) - 2, 56, aw, 1);
+        const char *aw = i18n(m->lang, STR_AWAY);
+        rx -= text_width(aw, 1);
+        draw_text(rx, 56, aw, 1);
+        rx -= 4;
+    }
+    if (m->humidity_valid) {
+        char hb[16];
+        int rh = (m->humidity_pct100 + 50) / 100;
+        if (rh < 0)   rh = 0;
+        if (rh > 100) rh = 100;
+        snprintf(hb, sizeof(hb), "%d%%", rh);
+        rx -= text_width(hb, 1);
+        draw_text(rx, 56, hb, 1);
     }
 }
 
 static void render_adjust(const ui_model_t *m)
 {
     draw_status_bar(m);
-    const char *lbl = m->active_setpoint == 1
-        ? (m->occupied ? "SET COOL" : "AWAY COOL")
-        : (m->occupied ? "SET HEAT" : "AWAY HEAT");
+    char lbl[24];
+    snprintf(lbl, sizeof(lbl), "%s %s",
+             i18n(m->lang, m->occupied ? STR_SET : STR_AWAY),
+             i18n(m->lang, m->active_setpoint == 1 ? STR_M_COOL : STR_M_HEAT));
     draw_text(2, 15, lbl, 1);
 
     int set = (m->active_setpoint == 1) ? m->cool_set_c100 : m->heat_set_c100;
@@ -338,7 +355,7 @@ static void render_adjust(const ui_model_t *m)
 
 static void render_menu(const ui_model_t *m)
 {
-    draw_text(2, 0, "SETTINGS", 1);
+    draw_text(2, 0, i18n(m->lang, STR_SETTINGS), 1);
     fb_hline(0, s.cfg.width - 1, 10, true);
 
     int total = m->menu_count;
@@ -383,19 +400,52 @@ static void render_info(const ui_model_t *m)
 
 static void render_pairing(const ui_model_t *m)
 {
-    draw_text(2, 0, "PAIR THERMOSTAT", 1);
+    draw_text(2, 0, i18n(m->lang, STR_PAIR_TITLE), 1);
     fb_rect(4, 14, 40, 40, true);                          /* QR placeholder box */
-    draw_text(52, 20, "CODE:", 1);
+    draw_text(52, 20, i18n(m->lang, STR_CODE), 1);
     draw_text(52, 32, m->pairing_code ? m->pairing_code : "----", 1);
-    draw_text(2, 56, "NEEDS THREAD BR", 1);
+    draw_text(2, 56, i18n(m->lang, STR_NEEDS_BR), 1);
 }
 
 static void render_fault(const ui_model_t *m)
 {
-    (void)m;
-    draw_text(2, 4, "! SENSOR FAULT", 1);
-    draw_text(2, 24, "CHECK ROOM SENSOR", 1);
-    draw_text(2, 40, "OUTPUTS DISABLED", 1);
+    draw_text(2, 4,  i18n(m->lang, STR_FAULT1), 1);
+    draw_text(2, 24, i18n(m->lang, STR_FAULT2), 1);
+    draw_text(2, 40, i18n(m->lang, STR_FAULT3), 1);
+}
+
+/* Selection dialog: a title, a short list of options (menu_lines) with the
+ * highlighted one inverted, and a hint line. Used for the BOOT long-press
+ * "Pairing / Factory reset" chooser. */
+static void render_confirm(const ui_model_t *m)
+{
+    draw_text(2, 0, m->info_title ? m->info_title : "SELECT", 1);
+    fb_hline(0, s.cfg.width - 1, 10, true);
+
+    for (int i = 0; i < m->menu_count && i < UI_MENU_MAX; ++i) {
+        int y = 16 + i * 12;
+        const char *txt = m->menu_lines[i] ? m->menu_lines[i] : "";
+        if (i == m->menu_index) {
+            fb_fill_rect(0, y - 1, s.cfg.width, 11, true);
+            draw_text_inv(6, y, txt, 1);
+        } else {
+            draw_text(6, y, txt, 1);
+        }
+    }
+    draw_text(2, 56, i18n(m->lang, STR_HINT), 1);
+}
+
+/* Matter Identify: a centered inverted banner over whatever screen is showing,
+ * so a controller's "identify" is visible on the display (there is no LED). */
+static void render_identify_banner(const ui_model_t *m)
+{
+    const char *t = i18n(m->lang, STR_IDENTIFY);
+    int w = text_width(t, 1) + 8;
+    if (w > s.cfg.width) w = s.cfg.width;
+    int x = (s.cfg.width - w) / 2;
+    int y = 26, h = 13;
+    fb_fill_rect(x, y, w, h, true);
+    draw_text_inv(x + 4, y + 3, t, 1);
 }
 
 /* ---- public API ---------------------------------------------------------- */
@@ -413,15 +463,21 @@ int ui_oled_init(const ui_oled_config_t *cfg)
     fb_clear();
     return ESP_OK;
 #else
-    i2c_master_bus_config_t bus_cfg = {
-        .i2c_port = s.cfg.i2c_port,
-        .sda_io_num = s.cfg.sda_gpio,
-        .scl_io_num = s.cfg.scl_gpio,
-        .clk_source = I2C_CLK_SRC_DEFAULT,
-        .flags.enable_internal_pullup = true,
-    };
-    esp_err_t err = i2c_new_master_bus(&bus_cfg, &s.bus);
-    if (err != ESP_OK) { ESP_LOGE(TAG, "i2c bus: %s", esp_err_to_name(err)); return err; }
+    esp_err_t err;
+    if (s.cfg.ext_bus) {
+        /* Reuse a bus the app already created (shared with the SHT40). */
+        s.bus = (i2c_master_bus_handle_t)s.cfg.ext_bus;
+    } else {
+        i2c_master_bus_config_t bus_cfg = {
+            .i2c_port = s.cfg.i2c_port,
+            .sda_io_num = s.cfg.sda_gpio,
+            .scl_io_num = s.cfg.scl_gpio,
+            .clk_source = I2C_CLK_SRC_DEFAULT,
+            .flags.enable_internal_pullup = true,
+        };
+        err = i2c_new_master_bus(&bus_cfg, &s.bus);
+        if (err != ESP_OK) { ESP_LOGE(TAG, "i2c bus: %s", esp_err_to_name(err)); return err; }
+    }
 
     esp_lcd_panel_io_i2c_config_t io_cfg = {
         .dev_addr = s.cfg.addr,
@@ -475,7 +531,9 @@ void ui_oled_render(const ui_model_t *m)
         case UI_SCREEN_INFO:    render_info(m);    break;
         case UI_SCREEN_PAIRING: render_pairing(m); break;
         case UI_SCREEN_FAULT:   render_fault(m);   break;
+        case UI_SCREEN_CONFIRM: render_confirm(m); break;
     }
+    if (m->identify) render_identify_banner(m);
     fb_flush();
 }
 

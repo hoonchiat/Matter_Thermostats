@@ -11,7 +11,6 @@
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
 #include "thermostat_core.h"
-#include "thermistor.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -25,11 +24,11 @@ typedef struct {
     int  deadband_c10;      /* 0.1 C units                       */
     int  offset_c100;       /* calibration, 0.01 C               */
     bool fahrenheit;        /* display units                     */
-    int  ntc_type;          /* ntc_type_t                        */
     int  min_off_s;
     int  min_on_s;
     int  hp_reversing;      /* thermo_hp_mode_t                  */
     int  brightness;        /* 0..255                            */
+    int  lang;              /* lang_t: 0=EN,1=FR,2=ES,3=DE       */
     int  fan_speed;         /* thermo_fan_speed_t: 0=auto,1=low,2=med,3=high */
     int  occ_source;        /* occ_source_t: 0=manual, 1=sensor  */
     bool occ_manual_home;   /* manual Home(true)/Away(false) pref */
@@ -45,6 +44,8 @@ typedef struct {
     app_config_t cfg;
 
     int  temp_c100;         /* measured room temp, 0.01 C        */
+    int  humidity_pct100;   /* relative humidity, 0.01 % (SHT40) */
+    bool humidity_valid;    /* humidity available (SHT40, no fault) */
     bool fault;             /* sensor fault                      */
 
     bool calling_heat;
@@ -54,6 +55,7 @@ typedef struct {
 
     bool commissioned;      /* Matter commissioned onto a fabric */
     int  thread_rssi;
+    int64_t identify_until_ms; /* show the IDENTIFY banner until this time (0 = off) */
 
     int  screen;            /* ui_screen_t                       */
     int  active_setpoint;   /* 0 = heat, 1 = cool                */
@@ -65,6 +67,7 @@ typedef enum {
     EVT_ENCODER_DELTA = 0,  /* value = signed detents            */
     EVT_BTN_MODE_SHORT,     /* dedicated push button, short      */
     EVT_BTN_MENU_LONG,      /* dedicated push button, long       */
+    EVT_BTN_FAN_SHORT,      /* dedicated fan-speed button, short */
     EVT_ENC_SW_SHORT,       /* encoder switch, short             */
     EVT_ENC_SW_LONG,        /* encoder switch, long              */
     EVT_RESET_LONG,         /* BOOT button long → factory reset  */
@@ -101,6 +104,7 @@ int  app_nvs_save(const app_config_t *cfg);/* debounced writer inside   */
 
 int  app_matter_start(void);               /* create endpoints + start stack */
 void app_matter_report_temperature(int temp_c100, bool fault);
+void app_matter_report_humidity(int pct100, bool valid);   /* Relative Humidity Measurement */
 void app_matter_report_running_state(bool heat, bool cool, bool fan);
 void app_matter_report_setpoints(int heat_c100, int cool_c100);
 void app_matter_report_unocc_setpoints(int heat_c100, int cool_c100);
@@ -109,6 +113,8 @@ void app_matter_report_units(bool fahrenheit);   /* TemperatureDisplayMode */
 void app_matter_report_fan(int fan_speed);       /* Fan Control FanMode */
 void app_matter_report_occupancy(bool occupied); /* Occupancy Sensing */
 void app_matter_factory_reset(void);
+void app_matter_open_commissioning_window(void);  /* user-initiated pairing */
+void app_on_identify(int seconds);                /* Matter Identify -> OLED banner */
 void app_matter_get_pairing_code(char *out, int out_len);
 
 void app_control_start(void);              /* sensor + control + ui tasks */

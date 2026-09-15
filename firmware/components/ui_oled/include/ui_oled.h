@@ -25,6 +25,7 @@ typedef enum {
     UI_SCREEN_INFO,      /* Matter payload detail (from the menu) */
     UI_SCREEN_PAIRING,
     UI_SCREEN_FAULT,
+    UI_SCREEN_CONFIRM,   /* selection dialog (e.g. BOOT: Pairing / Factory reset) */
 } ui_screen_t;
 
 /* The complete view-model the renderer needs; app fills this each redraw. */
@@ -40,8 +41,12 @@ typedef struct {
     bool  fan_on;
     int   fan_speed;        /* thermo_fan_speed_t: 0=auto,1=low,2=med,3=high */
     bool  occupied;         /* Home (true) / Away (false) */
+    int   humidity_pct100;  /* relative humidity, 0.01 % */
+    bool  humidity_valid;   /* show humidity? (SHT40 present) */
     bool  fault;
     bool  commissioned;     /* Matter commissioned?                              */
+    bool  identify;         /* Matter Identify active -> show a banner            */
+    int   lang;             /* lang_t: 0=EN,1=FR,2=ES,3=DE                        */
     int   thread_rssi;      /* dBm, for the signal glyph (0 if unknown)          */
     int   active_setpoint;  /* 0 = heat, 1 = cool (which one ADJUST edits)        */
     const char *pairing_code;   /* Matter manual pairing code (PAIRING/INFO)     */
@@ -68,6 +73,8 @@ typedef struct {
     int  height;            /* 64 or 32 */
     bool sh1106;            /* true => SH1106, false => SSD1306 */
     int  i2c_hz;            /* e.g. 400000 */
+    void *ext_bus;          /* optional existing i2c_master_bus_handle_t to reuse;
+                               if NULL, the driver creates its own bus from sda/scl */
 } ui_oled_config_t;
 
 /* Initialize the I2C bus + panel and clear the display. */

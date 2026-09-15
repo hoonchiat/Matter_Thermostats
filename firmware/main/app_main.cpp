@@ -44,9 +44,9 @@ extern "C" void app_main(void)
     g_state.active_setpoint = 0;
     g_state.commissioned = false;   /* set true by the commissioning event */
 
-    ESP_LOGI(TAG, "boot: mode=%d heat=%d cool=%d units=%s ntc=%d",
+    ESP_LOGI(TAG, "boot: mode=%d heat=%d cool=%d units=%s",
              g_state.cfg.mode, g_state.cfg.heat_set_c100, g_state.cfg.cool_set_c100,
-             g_state.cfg.fahrenheit ? "F" : "C", g_state.cfg.ntc_type);
+             g_state.cfg.fahrenheit ? "F" : "C");
 
     /* Bring up local I/O + control first so the device is usable even before
      * it is commissioned (standalone thermostat operation). */

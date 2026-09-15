@@ -1,0 +1,50 @@
+name: CI
+
+# Fast, hardware-free checks for every push and pull request. A full
+# ESP-IDF + ESP-Matter build is intentionally not run here: the esp-matter
+# toolchain is many gigabytes and slow to provision, which makes it a poor
+# fit for gating checks. Instead we exercise the pure-C logic (thermistor,
+# control law, occupancy, SHT40 conversions) and the OLED renderer through
+# the host test suite, which needs nothing but a C compiler and Python.
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+# Cancel an in-flight run when a newer commit is pushed to the same ref.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  host-tests:
+    name: Host unit + UI tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Show toolchain versions
+        run: |
+          cc --version
+          make --version | head -n1
+          python3 --version
+
+      - name: Run host unit + UI test suites
+        # thermistor, thermostat_core, occupancy, sht4x (CRC + conversions),
+        # and the OLED UI render assertions — all pure C, no ESP-IDF needed.
+        run: make -C firmware/test/host test
+
+      - name: Compile the user-guide renderers
+        # Ensure the screen-render and ASCII-preview tools still build.
+        run: make -C firmware/test/host render_screens preview_ui
+
+      - name: Smoke-test the user-guide generator pipeline
+        # render_screens emits base64 framebuffers as JSON; gen_userguide.py
+        # injects them into the template and writes docs/USER_GUIDE.html.
+        # We only check the pipeline runs and produces output (the workspace
+        # copy is discarded — nothing is committed here).
+        run: |
+          firmware/test/host/render_screens | python3 tools/gen_userguide.py
+          test -s docs/USER_GUIDE.html
