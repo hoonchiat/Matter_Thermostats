@@ -2,7 +2,10 @@
 #
 # Prerequisites (exported in your shell before building):
 #   - ESP-IDF v5.2+            : source $IDF_PATH/export.sh
-#   - ESP-Matter               : source $ESP_MATTER_PATH/export.sh
+#
+# Matter core is pulled from the pre-built managed component espressif/esp_matter
+# (see main/idf_component.yml) — the same approach as the sibling rgb-light/button/
+# hub projects — so no connectedhomeip source build (and no gn/pigweed) is needed.
 #
 # Build:
 #   idf.py set-target esp32c6
@@ -11,14 +14,12 @@ cmake_minimum_required(VERSION 3.16)
 
 set(PROJECT_VER "0.1.0")
 
-# Pull in ESP-Matter and the connectedhomeip components, plus our local components.
-# ESP_MATTER_PATH is set by esp-matter's export.sh.
-set(EXTRA_COMPONENT_DIRS
-    "${CMAKE_CURRENT_LIST_DIR}/components"
-    "$ENV{ESP_MATTER_PATH}/components"
-    "$ENV{ESP_MATTER_PATH}/examples/common"
-    "$ENV{ESP_MATTER_PATH}/connectedhomeip/connectedhomeip/config/esp32/components"
-)
+# Local components only; Matter arrives via the managed component and any downloaded
+# managed_components/ dir.
+set(EXTRA_COMPONENT_DIRS "${CMAKE_CURRENT_LIST_DIR}/components")
+if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/managed_components")
+    list(APPEND EXTRA_COMPONENT_DIRS "${CMAKE_CURRENT_LIST_DIR}/managed_components")
+endif()
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(matter_thermostat)

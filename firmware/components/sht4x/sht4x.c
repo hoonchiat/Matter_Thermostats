@@ -45,17 +45,20 @@ int sht4x_read(float *temp_c, float *rh_pct, bool *fault)
 
     uint8_t cmd = CMD_MEASURE_HIGH;
     if (i2c_master_transmit(s.dev, &cmd, 1, 100) != ESP_OK) {
-        if (fault) *fault = true; return ESP_FAIL;
+        if (fault) *fault = true;
+        return ESP_FAIL;
     }
     vTaskDelay(pdMS_TO_TICKS(10));                /* wait for conversion */
 
     uint8_t buf[6];
     if (i2c_master_receive(s.dev, buf, sizeof(buf), 100) != ESP_OK) {
-        if (fault) *fault = true; return ESP_FAIL;
+        if (fault) *fault = true;
+        return ESP_FAIL;
     }
     /* Validate both CRCs (T triplet and RH triplet). */
     if (sht4x_crc8(&buf[0], 2) != buf[2] || sht4x_crc8(&buf[3], 2) != buf[5]) {
-        if (fault) *fault = true; return ESP_FAIL;
+        if (fault) *fault = true;
+        return ESP_FAIL;
     }
 
     uint16_t t_ticks  = ((uint16_t)buf[0] << 8) | buf[1];

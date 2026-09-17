@@ -19,7 +19,9 @@ idf_component_register(
         # ESP-IDF + Matter:
         nvs_flash
         esp_matter
-        esp_matter_console
+        # esp_matter_console is only needed when CONFIG_ENABLE_CHIP_SHELL=y
+        # (diagnostics CLI); it is off by default, so the console calls in
+        # app_matter.cpp compile out and the component isn't required.
 )
 
 # ESP-Matter data-model codegen sometimes needs the CHIP config on the include path.
