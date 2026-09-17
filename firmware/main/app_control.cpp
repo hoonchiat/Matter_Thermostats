@@ -20,6 +20,8 @@
 #include "sht4x.h"
 #include "i18n.h"
 
+#include <cstring>              /* strncpy */
+
 #define TAG "app_control"
 
 /* Setpoint hard limits (0.01 C), matching the Matter Abs*SetpointLimit attrs. */
@@ -657,7 +659,7 @@ static void ui_task(void *arg)
 
         /* Redraw at ~10 Hz. */
         if (now_ms() - last_render >= 100) {
-            ui_model_t m = {0};
+            ui_model_t m = {};
             build_model(&m);
             ui_oled_render(&m);
             last_render = now_ms();
@@ -684,10 +686,10 @@ void app_control_start(void)
      * created here, before the tasks, so both can add their device to it. */
     i2c_master_bus_config_t bus_cfg = {
         .i2c_port = 0,
-        .sda_io_num = CONFIG_THERMO_PIN_I2C_SDA,
-        .scl_io_num = CONFIG_THERMO_PIN_I2C_SCL,
+        .sda_io_num = (gpio_num_t)CONFIG_THERMO_PIN_I2C_SDA,
+        .scl_io_num = (gpio_num_t)CONFIG_THERMO_PIN_I2C_SCL,
         .clk_source = I2C_CLK_SRC_DEFAULT,
-        .flags.enable_internal_pullup = true,
+        .flags = { .enable_internal_pullup = true },
     };
     if (i2c_new_master_bus(&bus_cfg, &s_i2c_bus) != ESP_OK) {
         ESP_LOGE(TAG, "shared I2C bus init failed");

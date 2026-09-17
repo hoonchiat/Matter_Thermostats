@@ -13,10 +13,12 @@
 
 #include "esp_log.h"
 #include "esp_matter.h"
+#if CONFIG_ENABLE_CHIP_SHELL
 #include "esp_matter_console.h"
+#endif
 #include "esp_matter_ota.h"
 
-#include <app/server/OnboardingCodesUtil.h>
+#include <setup_payload/OnboardingCodesUtil.h>
 #include <app/server/Server.h>
 #include <setup_payload/ManualSetupPayloadGenerator.h>
 #include <setup_payload/SetupPayload.h>
@@ -177,8 +179,12 @@ static void app_device_event_cb(const ChipDeviceEvent *event, intptr_t arg)
                 auto &mgr = chip::Server::GetInstance().GetCommissioningWindowManager();
                 constexpr auto kTimeout = chip::System::Clock::Seconds16(300);
                 if (!mgr.IsCommissioningWindowOpen()) {
-                    mgr.OpenBasicCommissioningWindow(
+                    CHIP_ERROR err = mgr.OpenBasicCommissioningWindow(
                         kTimeout, chip::CommissioningWindowAdvertisement::kDnssdOnly);
+                    if (err != CHIP_NO_ERROR) {
+                        ESP_LOGE(TAG, "re-open commissioning failed: %" CHIP_ERROR_FORMAT,
+                                 err.Format());
+                    }
                 }
             }
             break;
@@ -203,8 +209,8 @@ int app_matter_start(void)
      * config. endpoint::thermostat::create() enables the Heating|Cooling
      * features (see esp_matter_endpoint.cpp), so these seeds take effect. */
     app_lock();
-    th_cfg.thermostat.heating.occupied_heating_setpoint = (int16_t)g_state.cfg.heat_set_c100;
-    th_cfg.thermostat.cooling.occupied_cooling_setpoint = (int16_t)g_state.cfg.cool_set_c100;
+    th_cfg.thermostat.features.heating.occupied_heating_setpoint = (int16_t)g_state.cfg.heat_set_c100;
+    th_cfg.thermostat.features.cooling.occupied_cooling_setpoint = (int16_t)g_state.cfg.cool_set_c100;
     th_cfg.thermostat.control_sequence_of_operation = 4;   /* Cooling & Heating */
     th_cfg.thermostat.system_mode = mode_to_matter(g_state.cfg.mode);
     app_unlock();

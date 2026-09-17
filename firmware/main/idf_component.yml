@@ -1,9 +1,14 @@
 # Managed component dependencies (pulled by the IDF Component Manager on first build).
-# The OLED driver is provided as a managed component so we don't vendor a full
-# SSD1306 driver in-tree; the ui_oled component wraps it.
+# The SSD1306 panel driver ships built into ESP-IDF's esp_lcd component
+# (esp_lcd_panel_ssd1306.h) as of IDF v5.3+, so no managed component is needed;
+# ui_oled just PRIV_REQUIRES esp_lcd. (The previously listed managed component
+# espressif/esp_lcd_ssd1306 does not exist in the registry.)
 dependencies:
-  # SSD1306/SH1106 panel driver on top of esp_lcd.
-  espressif/esp_lcd_ssd1306: "^1.0.0"
+  # Pre-built Matter core (CHIP libs) — avoids a connectedhomeip source build.
+  espressif/esp_matter:
+    version: ">=1.4.0"
+  espressif/mdns:
+    version: ">=1.0.0"
   # (Optional) LVGL port if a richer UI is desired later:
   # lvgl/lvgl: "^8.3.0"
   # esp_lvgl_port: "^1.4.0"

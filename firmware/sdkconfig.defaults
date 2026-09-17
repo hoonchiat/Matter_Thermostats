@@ -24,3 +24,8 @@ CONFIG_LOG_DEFAULT_LEVEL_INFO=y
 # --- NVS ---------------------------------------------------------------------
 # (Enable NVS encryption in production; requires the nvs_keys partition.)
 # CONFIG_NVS_ENCRYPTION=y
+
+# --- Matter crypto (CHIP) ----------------------------------------------------
+# CHIP's crypto (HKDF_SHA256) needs mbedTLS HKDF, which is off by default.
+# Without this the link fails: undefined reference to `mbedtls_hkdf'.
+CONFIG_MBEDTLS_HKDF_C=y
