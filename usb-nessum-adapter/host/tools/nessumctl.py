@@ -8,10 +8,14 @@ Examples:
     nessumctl mac get
     nessumctl mac set 00:50:c2:aa:bb:cc --apply
     nessumctl mac clear --apply
+    nessumctl key set --file kit42.key
+    nessumctl key status
+    nessumctl lock
     nessumctl status
 """
 
 import argparse
+import hashlib
 import os
 import re
 import select
@@ -24,6 +28,7 @@ DEFAULT_DEVICE = "/dev/nessum-mgmt"
 TIMEOUT_S = 3.0
 EXIT_ERR_DEVICE = 2
 EXIT_ERR_PROTOCOL = 3
+NKEY_LEN = 16  # bytes; AES-128 assumed - confirm against the SC1320A security spec
 
 
 class MacError(ValueError):
@@ -51,6 +56,39 @@ def parse_mac(text):
     if first & 0x01:
         raise MacError(f"{mac} is a multicast (group) address")
     return mac
+
+
+class KeyError_(ValueError):
+    pass
+
+
+def key_fingerprint(key):
+    """First 16 hex digits of SHA-256(key): identifies a key without revealing it."""
+    return hashlib.sha256(key).hexdigest()[:16]
+
+
+def read_key_file(path, check_perms=True):
+    """Read a hex network key from a file that only its owner can read.
+
+    Keys are never taken on the command line, where they would end up in shell
+    history and be visible to other users in `ps`.
+    """
+    st = os.stat(path)
+    if check_perms and st.st_mode & 0o077:
+        raise KeyError_(f"{path} is readable by group/others; run: chmod 600 {path}")
+    with open(path) as f:
+        text = "".join(f.read().split())
+    if text.lower().startswith("0x"):
+        text = text[2:]
+    try:
+        key = bytes.fromhex(text)
+    except ValueError:
+        raise KeyError_(f"{path} does not contain a hex key") from None
+    if len(key) != NKEY_LEN:
+        raise KeyError_(f"network key must be {NKEY_LEN} bytes ({NKEY_LEN * 2} hex digits), got {len(key)}")
+    if key == bytes(NKEY_LEN):
+        raise KeyError_("all-zero network key rejected")
+    return key
 
 
 def is_locally_administered(mac):
@@ -142,7 +180,7 @@ def cmd_mac(con, args):
         if args.quiet:
             print(info.get("active", ""))
         else:
-            for key in ("active", "source", "factory", "programmed"):
+            for key in ("active", "source", "default", "programmed", "locked"):
                 print(f"{key:<11}{info.get(key, '?')}")
         return 0
 
@@ -154,13 +192,34 @@ def cmd_mac(con, args):
         print(f"programmed {mac}")
     else:  # clear
         con.command("MAC CLEAR")
-        print("programmed address cleared; factory address will be used")
+        print("programmed address cleared; the default (EEPROM EUI-48) address will be used")
 
     if args.apply:
         con.command("REBOOT")
         print("adapter re-enumerating ...")
         return 0
     print("run 'nessumctl reboot' (or replug) for Linux to pick up the new address")
+    return 0
+
+
+def cmd_key(con, args):
+    if args.action == "status":
+        info = merged(con.command("NKEY GET"))
+        print(f"set        {info.get('set', '?')}")
+        print(f"fingerprint {info.get('fp', '?')}")
+        return 0
+    key = read_key_file(args.file, check_perms=not args.insecure_perms)
+    info = merged(con.command(f"NKEY SET {key.hex()}"))
+    expected = key_fingerprint(key)
+    if info.get("fp") != expected:
+        raise ProtocolError(-1, f"key fingerprint mismatch (adapter {info.get('fp')}, expected {expected})")
+    print(f"network key programmed, fingerprint {expected}")
+    return 0
+
+
+def cmd_lock(con):
+    con.command("LOCK")
+    print("adapter factory-locked: MAC address and network key can no longer be changed over USB")
     return 0
 
 
@@ -179,13 +238,22 @@ def build_parser():
 
     mac = sub.add_parser("mac", help="show or program the Ethernet MAC address")
     mac_sub = mac.add_subparsers(dest="action", required=True)
-    g = mac_sub.add_parser("get", help="show active / factory / programmed addresses")
+    g = mac_sub.add_parser("get", help="show active / default / programmed addresses")
     g.add_argument("-q", "--quiet", action="store_true", help="print only the active address")
     s = mac_sub.add_parser("set", help="program a persistent MAC address")
     s.add_argument("address")
     s.add_argument("--apply", action="store_true", help="re-enumerate so Linux uses it now")
-    c = mac_sub.add_parser("clear", help="revert to the factory MAC address")
+    c = mac_sub.add_parser("clear", help="revert to the default (EEPROM EUI-48) MAC address")
     c.add_argument("--apply", action="store_true", help="re-enumerate so Linux uses it now")
+
+    key = sub.add_parser("key", help="Nessum network key (write-only)")
+    key_sub = key.add_subparsers(dest="action", required=True)
+    key_sub.add_parser("status", help="show whether a key is set and its fingerprint")
+    ks = key_sub.add_parser("set", help="program the network key from a file (hex)")
+    ks.add_argument("--file", required=True, help="file holding the key as hex; must be mode 600")
+    ks.add_argument("--insecure-perms", action="store_true", help=argparse.SUPPRESS)
+
+    sub.add_parser("lock", help="factory lock: freeze MAC and network key (one-way over USB)")
 
     sub.add_parser("version", help="firmware / hardware / Nessum IC versions")
     sub.add_parser("status", help="Nessum link state and rate")
@@ -199,12 +267,14 @@ def main(argv=None):
     args = build_parser().parse_args(argv)
 
     # Validate before touching the device so typos fail fast.
-    if args.cmd == "mac" and args.action == "set":
-        try:
+    try:
+        if args.cmd == "mac" and args.action == "set":
             parse_mac(args.address)
-        except MacError as e:
-            print(f"nessumctl: {e}", file=sys.stderr)
-            return 1
+        if args.cmd == "key" and args.action == "set":
+            read_key_file(args.file, check_perms=not args.insecure_perms)
+    except (MacError, KeyError_, OSError) as e:
+        print(f"nessumctl: {e}", file=sys.stderr)
+        return 1
 
     try:
         con = Console(args.device, args.timeout)
@@ -216,6 +286,10 @@ def main(argv=None):
         with con:
             if args.cmd == "mac":
                 return cmd_mac(con, args)
+            if args.cmd == "key":
+                return cmd_key(con, args)
+            if args.cmd == "lock":
+                return cmd_lock(con)
             if args.cmd == "nessum":
                 return cmd_simple(con, "NESSUM " + " ".join(args.text))
             return cmd_simple(con, args.cmd.upper())

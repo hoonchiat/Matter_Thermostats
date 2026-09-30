@@ -1,6 +1,6 @@
 # USB 2.0 ↔ Nessum Adapter — Specification
 
-**Document status:** Draft v0.3 (TI host, standard-Ethernet requirement, programmable MAC)
+**Document status:** Draft v0.4 (AM62x host, `eth2`, factory-programmed and locked MAC + network key)
 **Last updated:** 2026-09-30
 
 ---
@@ -37,9 +37,11 @@ port through its USB 2.0 host port, without writing or maintaining a custom kern
 
 | Request term | Interpreted as | Note |
 |---|---|---|
-| **Host CPU** | **TI Cortex-A53 SoC** (confirmed): Sitara AM62x / AM62A / AM62P / AM64x / AM65x family, TI Processor SDK Linux (arm64) | The adapter uses a standard USB class and the host driver is architecture-independent. The only SoC-specific part is the USB host-controller driver: DWC3 on AM62x/AM65x, Cadence cdns3 on AM64x (§8). The exact part number is still needed (§9, Q1). |
-| **"Standard Ethernet port"** (requirement) | Linux sees an ordinary Ethernet netdev (`ARPHRD_ETHER`, MAC, MTU 1500, carrier, VLAN, multicast), so existing software runs unchanged | Met by CDC-NCM + the in-kernel `cdc_ncm` driver. The firmware obligations and the known differences from a PHY-based NIC are in [MANAGEMENT.md §3](MANAGEMENT.md#3-what-makes-it-look-like-a-standard-ethernet-port-to-linux). |
-| **Programmable MAC** (requirement) | The Ethernet MAC is stored in the adapter and can be changed from Linux | Factory EUI-48 by default. A user-programmed address persists in EEPROM (`nessumctl mac set`). A runtime `ip link set address` also works. See [MANAGEMENT.md §1](MANAGEMENT.md#1-mac-addresses-in-the-adapter). |
+| **Host CPU** | **TI AM62x** (confirmed; Cortex-A53), TI Processor SDK Linux (arm64) | The adapter uses a standard USB class and the host driver is architecture-independent. The only SoC-specific part is the USB host controller: DWC3 with the AM62 glue (§8). |
+| **"Standard Ethernet port"** (requirement) | Linux sees an ordinary Ethernet netdev (`ARPHRD_ETHER`, MAC, MTU 1500, carrier, VLAN, multicast), so existing software runs unchanged | Met by CDC-NCM + the in-kernel `cdc_ncm` driver. The firmware obligations and the known differences from a PHY-based NIC are in [MANAGEMENT.md §5](MANAGEMENT.md#5-what-makes-it-look-like-a-standard-ethernet-port-to-linux). |
+| **Interface name** (confirmed) | `eth2` | Next after the AM62x CPSW's `eth0`/`eth1`. Alternative name `nessum0`. |
+| **MAC address** (confirmed) | Programmed **at the factory** from your own address block, then **locked** | `factory_program.py` assigns addresses without duplicates. After the lock, no change is possible over USB, persistent or runtime. See [MANAGEMENT.md §1, §3](MANAGEMENT.md#1-mac-addresses-in-the-adapter). |
+| **Nessum network key** (confirmed) | Programmed **at the factory**, then locked together with the MAC | Write-only over USB (only a fingerprint can be read). Sealed with the RT1062's chip-unique key. See [MANAGEMENT.md §2](MANAGEMENT.md#2-nessum-network-key). |
 | **USB 2.0** | USB 2.0 **High-Speed** (480 Mbit/s) device | Full-Speed (12 Mbit/s) would bottleneck the link. |
 | **Nessum** | Nessum (formerly HD-PLC), IEEE 1901-2020 wavelet-OFDM | — |
 | **Medium** (confirmed) | **(a)** an existing **twisted pair currently carrying RS-485**, or **(b)** an existing **low-power 24 V AC or 24 V DC** cable | Both are SELV / low-voltage media, **not AC mains** (§6). Assumption: Nessum **replaces** RS-485 signalling on the pair. Sharing the pair with live RS-485 traffic is not planned (§6.1). |
@@ -216,8 +218,8 @@ FCC Part 15 or CISPR 32).
 | VID:PID | **TBD.** Use a vendor-owned VID or apply for a free PID (e.g. pid.codes for open hardware). Never ship with a borrowed ID. |
 | Configuration | 1 config, bus-powered, `bMaxPower` set from §5 |
 | Function 0 | CDC-NCM (Communication + Data interfaces, IAD) |
-| Function 1 | CDC-ACM management console (**required**: MAC programming and status, [MANAGEMENT.md §2](MANAGEMENT.md#2-console-protocol)) |
-| MAC address | Active address (runtime → programmed → factory EUI-48 from the 24AA02E48) reported in the NCM `iMACAddress` string. `bmNetworkCapabilities` advertises `SET/GET_NET_ADDRESS` so `ip link set address` works. See [MANAGEMENT.md §1](MANAGEMENT.md#1-mac-addresses-in-the-adapter). |
+| Function 1 | CDC-ACM management console (**required**: MAC programming and status, [MANAGEMENT.md §4](MANAGEMENT.md#4-console-protocol)) |
+| MAC address | Factory-programmed address (the 24AA02E48's EUI-48 only on not-yet-programmed units) reported in the NCM `iMACAddress` string. `SET_NET_ADDRESS` is refused (STALL) once the unit is factory-locked. See [MANAGEMENT.md §1](MANAGEMENT.md#1-mac-addresses-in-the-adapter). |
 | Max segment | `wMaxSegmentSize` = 1518, so the host gets MTU 1500 with 802.1Q VLAN tags |
 | Packet filter | `SET_ETHERNET_PACKET_FILTER` implemented (promiscuous/multicast for bridges, IPv6, mDNS) |
 | NTB sizes | IN/OUT max ≥ 16 KiB (tune during bring-up) |
@@ -227,26 +229,28 @@ FCC Part 15 or CISPR 32).
 
 ## 8. Host-side (Linux) integration
 
-Target: TI Processor SDK Linux on an AM6x Cortex-A53 SoC. **No custom kernel driver.**
+Target: TI Processor SDK Linux on an **AM62x**. **No custom kernel driver.**
 
-- **Kernel:** `cdc_ncm` + `cdc_acm`, plus the SoC's USB host controller: DWC3 + `USB_DWC3_AM62`
-  (AM62x/AM62A/AM62P), cdns3 + `USB_CDNS3_TI` (AM64x), DWC3 + Keystone glue (AM65x). The
-  USB port's device-tree node must be in host or OTG mode. See
-  [`../host/linux/kernel.config`](../host/linux/kernel.config).
-- **Interface name:** [`../host/linux/10-nessum.link`](../host/linux/10-nessum.link) names it
-  `nessum0` (or an unused `ethN` if existing software hard-codes one). It matches on USB
-  VID:PID so the name survives MAC changes, and sets `MACAddressPolicy=none` so systemd never
-  replaces the adapter's MAC.
+- **Kernel:** `cdc_ncm` + `cdc_acm`, plus the AM62x USB host controller (DWC3 +
+  `USB_DWC3_AM62`, xHCI). The USB port's device-tree node (`&usb0`/`&usb1`) must be in
+  host or OTG mode. See [`../host/linux/kernel.config`](../host/linux/kernel.config).
+- **Interface name `eth2`:** set by [`../host/linux/10-nessum.link`](../host/linux/10-nessum.link),
+  with alternative name `nessum0`. It matches on USB VID:PID, and sets
+  `MACAddressPolicy=none` so systemd never replaces the adapter's factory MAC. On a
+  rootfs without systemd-udevd, use the commented `NAME="eth2"` rule in
+  `70-nessum.rules` instead.
 - **Management console:** [`../host/linux/70-nessum.rules`](../host/linux/70-nessum.rules)
   creates `/dev/nessum-mgmt`, restricted to root and the `netdev` group.
 - **Network config** (systemd-networkd; the TI SDK's Arago rootfs uses systemd):
   [`../host/linux/20-nessum.network`](../host/linux/20-nessum.network).
-- **MAC programming and status:** [`../host/tools/nessumctl.py`](../host/tools/nessumctl.py).
-  Python 3, standard library only. Tested against the protocol simulator
-  [`fake_adapter.py`](../host/tools/fake_adapter.py).
+- **Status and inspection:** [`../host/tools/nessumctl.py`](../host/tools/nessumctl.py)
+  (`mac get`, `key status`, `status`, `version`). Python 3, standard library only.
+- **Factory programming:** [`../host/tools/factory_program.py`](../host/tools/factory_program.py)
+  (MAC from your block + network key + lock, with an append-only CSV log). Both tools are
+  tested against the protocol simulator [`fake_adapter.py`](../host/tools/fake_adapter.py).
 - **Bring-up check:** [`../host/linux/check-adapter.sh`](../host/linux/check-adapter.sh).
 
-**Alternative if the host board can be changed:** the AM62x/AM64x CPSW Ethernet switch
+**Alternative if the host board can be changed:** the AM62x CPSW Ethernet switch
 supports RMII. Wiring the SC1320A straight to a spare CPSW port (fixed-link, no USB and
 no bridge MCU) gives a native `am65-cpsw-nuss` Ethernet port with fewer parts. The MAC then
 comes from the SoC's eFuse or device tree. This is only an option for new host board
@@ -258,9 +262,9 @@ revisions. The USB adapter remains the plan for existing boards.
 
 | # | Question | Impact |
 |---|---|---|
-| Q1 | TI Cortex-A53 confirmed. Which part (AM62x, AM62A, AM62P, AM64x, AM65x) and which TI SDK / kernel version? Does the rootfs use systemd-udevd or busybox mdev? | Which USB controller block in `kernel.config`, interface-naming method |
-| Q1a | Does existing software need a specific interface name (e.g. `eth1`), or can it use `nessum0`? | `10-nessum.link` |
-| Q1b | Is the MAC programmed per unit in production (from your own OUI block) or in the field? Does it need to be lockable against changes? | Production flow; an optional `MAC LOCK` command |
+| Q1 | ~~Host~~ Resolved: AM62x, interface `eth2`, MAC + network key factory-programmed and locked. Still open: TI SDK version, and which AM62x USB port (`usb0`/`usb1`) the adapter plugs into. | Device-tree `dr_mode` |
+| Q1b | Network-key scope: one key per kit/installation (recommended) or one for the whole product? What is your address block (base/size)? | Factory procedure ([MANAGEMENT.md §2](MANAGEMENT.md#2-nessum-network-key)) |
+| Q1c | Key size and storage in the SC1320A (AES-128 assumed; does the IC have its own protected key storage?) | `NKEY_LEN`, key sealing design |
 | Q2 | ~~Medium~~ Resolved: RS-485 twisted pair or 24 V AC/DC cable. Still open: region, and cable lengths / number of nodes per cable. | EMC band plan, multi-hop need |
 | Q3 | ~~IC~~ Resolved: SC1320A selected (§4.1). Still open: Socionext quote at our volume, datasheet/NDA/SDK access, eval kit. | Final go/no-go on SC1320A vs MLKHN1501AM |
 | Q3a | Does RS-485 traffic need to keep running on the same pair during migration? | Adds a filter per node (§6.1) |
@@ -279,7 +283,10 @@ revisions. The USB adapter remains the plan for existing boards.
    firmware and verify on the target Linux host with `iperf3` across a Nessum link.
 2. **Phase 1, schematic/layout rev A.** RT1062 + Nessum IC + AFE per vendor reference.
    Isolation and EMC review.
-3. **Phase 2, firmware features.** Management channel, link-state notifications, DFU
-   firmware update (USB DFU class), production MAC/serial programming.
+3. **Phase 2, firmware features.** Management channel, link-state notifications, factory
+   MAC/key programming and lock, sealed key storage, and firmware update (USB DFU class).
+   **Firmware update must accept only signed images, with RT1062 HAB secure boot enabled
+   in production.** Otherwise unsigned firmware loaded over USB could read the network key
+   or ignore the lock.
 4. **Phase 3, validation.** Throughput/latency, hot-plug and suspend/resume on the host,
    conducted emissions, safety pre-compliance.

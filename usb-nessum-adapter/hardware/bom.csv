@@ -2,7 +2,8 @@ ref,function,part,qty,notes
 U1,Bridge MCU,NXP MIMXRT1062 (i.MX RT1062),1,"Cortex-M7; on-chip USB2 HS PHY; ENET RMII — proposed, verify package/availability"
 U2,Nessum communication IC,Socionext SC1320A,1,"Selected (spec §4.1); HD-PLC4; single 3.3V; 7x7 QFN; price on quote. Fallback: MegaChips MLKHN1501AM (~US$8-9 @1k; adds 1.2V rail + 238-LBGA)"
 U3,QSPI NOR flash,8-16 MB 3.3V QSPI NOR,1,RT1062 boot/XIP
-U4,MAC EEPROM,Microchip 24AA02E48,1,"Factory EUI-48 in the write-protected upper half; programmed MAC (2 CRC copies) in the writable lower half - survives firmware updates"
+U4,MAC EEPROM,Microchip 24AA02E48,1,"Programmed MAC (2 CRC copies) + factory-lock flag in the writable lower half; EUI-48 in the upper half is only a fallback for unprogrammed units. A plain 24C02 is a cost-down option since every unit gets your own MAC"
+J3,SWD header / pads,Tag-Connect or 0.05in 2x5 pads,1,"Service access only (RMA unlock + key erase); see firmware/README.md Security"
 U5,Buck regulator,5V->3.3V synchronous buck >=1A,1,Only rail needed by the SC1320A; RT1062 core via its internal DCDC
 U6,Line driver,Per SC1320A datasheet/reference design,0-1,TBD - only if the IC needs an external TX driver
 Y1,Crystal,24 MHz,1,RT1062 main clock

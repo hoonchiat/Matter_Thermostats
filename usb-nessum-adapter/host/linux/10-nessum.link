@@ -8,11 +8,10 @@ Driver=cdc_ncm
 Property=ID_VENDOR_ID=1209 ID_MODEL_ID=0000
 
 [Link]
-# Default: a name that cannot collide with the SoC's own ports.
-Name=nessum0
-# If existing software hard-codes an ethN name, choose one the SoC doesn't use.
-# AM62x CPSW normally takes eth0/eth1, so e.g.:
-# Name=eth2
-AlternativeName=nessum-plc
+# eth2: the AM62x CPSW3G ports are eth0/eth1, so existing software sees the
+# Nessum link as the next ordinary Ethernet port. The alternative name lets new
+# scripts refer to it by function (`ip link show nessum0`).
+Name=eth2
+AlternativeName=nessum0
 # Keep the address the adapter reports (programmed with nessumctl); never override it.
 MACAddressPolicy=none

@@ -5,6 +5,7 @@ import contextlib
 import io
 import os
 import sys
+import tempfile
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -41,11 +42,11 @@ class CliTest(unittest.TestCase):
             rc = nessumctl.main(["-d", self.path, "-t", "2", *argv])
         return rc, out.getvalue(), err.getvalue()
 
-    def test_get_factory(self):
+    def test_get_default(self):
         rc, out, _ = self.run_cli("mac", "get")
         self.assertEqual(rc, 0)
         self.assertIn("active     00:1e:c0:12:34:56", out)
-        self.assertIn("source     factory", out)
+        self.assertIn("source     default", out)
         self.assertIn("programmed none", out)
 
     def test_set_then_apply_changes_active(self):
@@ -66,11 +67,11 @@ class CliTest(unittest.TestCase):
         self.assertEqual(self.adapter.reboots, 1)
         self.assertEqual(self.adapter.active, "00:50:c2:aa:bb:cc")
 
-    def test_clear_reverts_to_factory(self):
+    def test_clear_reverts_to_default(self):
         self.run_cli("mac", "set", "00:50:c2:aa:bb:cc", "--apply")
         rc, _, _ = self.run_cli("mac", "clear", "--apply")
         self.assertEqual(rc, 0)
-        self.assertEqual(self.adapter.active, fake_adapter.FACTORY_MAC)
+        self.assertEqual(self.adapter.active, fake_adapter.DEFAULT_MAC)
         self.assertIsNone(self.adapter.programmed)
 
     def test_invalid_mac_rejected_before_device_io(self):
@@ -89,6 +90,55 @@ class CliTest(unittest.TestCase):
         rc, _, err = self.run_cli("mac", "set", "00:50:c2:aa:bb:cc")
         self.assertEqual(rc, nessumctl.EXIT_ERR_PROTOCOL)
         self.assertIn("adapter error 4", err)
+
+    def key_file(self, content="00112233445566778899aabbccddeeff\n", mode=0o600):
+        fd, path = tempfile.mkstemp()
+        self.addCleanup(os.unlink, path)
+        os.write(fd, content.encode())
+        os.close(fd)
+        os.chmod(path, mode)
+        return path
+
+    def test_key_set_and_status_never_reveal_key(self):
+        path = self.key_file()
+        rc, out, _ = self.run_cli("key", "set", "--file", path)
+        self.assertEqual(rc, 0)
+        fp = nessumctl.key_fingerprint(bytes.fromhex("00112233445566778899aabbccddeeff"))
+        self.assertIn(fp, out)
+        rc, out, _ = self.run_cli("key", "status")
+        self.assertIn("set        yes", out)
+        self.assertIn(fp, out)
+        self.assertNotIn("00112233445566778899aabbccddeeff", out)
+
+    def test_key_file_checks(self):
+        cases = [(self.key_file(mode=0o644), "chmod 600"),
+                 (self.key_file("0011"), "must be 16 bytes"),
+                 (self.key_file("zz" * 16), "hex key"),
+                 (self.key_file("00" * 16), "all-zero")]
+        for path, msg in cases:
+            with self.subTest(msg=msg):
+                rc, _, err = self.run_cli("key", "set", "--file", path)
+                self.assertEqual(rc, 1)
+                self.assertIn(msg, err)
+        self.assertIsNone(self.adapter.nkey)
+
+    def test_lock(self):
+        # Nothing to lock until both the MAC and the key are programmed.
+        self.run_cli("mac", "set", "00:50:c2:aa:bb:cc")
+        self.assertEqual(self.run_cli("lock")[0], nessumctl.EXIT_ERR_PROTOCOL)
+        self.run_cli("key", "set", "--file", self.key_file())
+        self.assertEqual(self.run_cli("lock")[0], 0)
+        self.assertIn("locked     yes", self.run_cli("mac", "get")[1])
+        other_key = self.key_file("ff" * 16)
+        for argv in (("mac", "set", "00:50:c2:aa:bb:cd"), ("mac", "clear"),
+                     ("key", "set", "--file", other_key), ("nessum", "SETKEY", "x")):
+            with self.subTest(argv=argv):
+                rc, _, err = self.run_cli(*argv)
+                self.assertEqual(rc, nessumctl.EXIT_ERR_PROTOCOL)
+                self.assertIn("adapter error 6", err)
+        self.assertEqual(self.run_cli("nessum", "STATUS")[0], 0)  # read-only still allowed
+        self.assertEqual(self.adapter.programmed, "00:50:c2:aa:bb:cc")
+        self.assertEqual(self.adapter.nkey, bytes.fromhex("00112233445566778899aabbccddeeff"))
 
     def test_status_and_version(self):
         rc, out, _ = self.run_cli("status")
@@ -113,7 +163,8 @@ class ProtocolTest(unittest.TestCase):
 
     def test_every_response_ends_with_one_terminal_line(self):
         for req in ("VERSION", "STATUS", "MAC GET", "MAC SET 00:50:c2:aa:bb:cc",
-                    "MAC SET bogus", "MAC SET", "MAC CLEAR", "REBOOT", "FOO", "mac get"):
+                    "MAC SET bogus", "MAC SET", "MAC CLEAR", "NKEY GET", "NKEY SET 00",
+                    "NKEY SET", "LOCK", "REBOOT", "FOO", "mac get"):
             resp = self.a.handle(req)
             with self.subTest(req=req):
                 terminal = [r for r in resp if r == "OK" or r.startswith("ERR")]

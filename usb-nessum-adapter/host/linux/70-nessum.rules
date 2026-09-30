@@ -12,4 +12,4 @@ SUBSYSTEM=="tty", ATTRS{idVendor}=="1209", ATTRS{idProduct}=="0000", \
 # Without systemd-udevd's .link support (e.g. busybox mdev), name the
 # interface here instead:
 # SUBSYSTEM=="net", ACTION=="add", DRIVERS=="cdc_ncm", \
-#   ATTRS{idVendor}=="1209", ATTRS{idProduct}=="0000", NAME="nessum0"
+#   ATTRS{idVendor}=="1209", ATTRS{idProduct}=="0000", NAME="eth2"

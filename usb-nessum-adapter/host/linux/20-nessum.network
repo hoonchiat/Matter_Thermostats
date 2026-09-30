@@ -1,7 +1,7 @@
 # systemd-networkd config for the Nessum adapter.
 # Install to /etc/systemd/network/ and run: systemctl restart systemd-networkd
 [Match]
-Name=nessum0
+Name=eth2
 
 [Link]
 # Carrier follows the Nessum link state (the adapter sends NCM link notifications),

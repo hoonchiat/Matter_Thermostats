@@ -1,8 +1,8 @@
 #!/bin/sh
 # Bring-up sanity check for the USB <-> Nessum adapter on the Linux host.
-# Usage: check-adapter.sh [iface]   (default iface: nessum0)
+# Usage: check-adapter.sh [iface]   (default iface: eth2)
 set -u
-IFACE="${1:-nessum0}"
+IFACE="${1:-eth2}"
 rc=0
 
 say()  { printf '%s\n' "$*"; }
