@@ -1,12 +1,25 @@
 # USB 2.0 ↔ Nessum Adapter
 
-A small USB 2.0 High-Speed dongle that gives an embedded Linux host (Arm Cortex-A53)
+A small USB 2.0 High-Speed dongle that gives an embedded Linux host (TI Sitara Cortex-A53)
 a **Nessum** (IEEE 1901 wavelet-OFDM, formerly *HD-PLC*) wired link over existing
 field wiring: an **RS-485 twisted pair** or a **low-power 24 V AC/DC cable**.
 
-To the host it is an ordinary USB network adapter: it enumerates as a **USB CDC-NCM**
-Ethernet device, so the stock Linux `cdc_ncm` driver binds to it and it shows up as a
-normal network interface (`usb0` / `enx…`). No out-of-tree kernel driver is needed.
+To Linux it is a **standard Ethernet port**. It enumerates as a **USB CDC-NCM** device,
+the stock `cdc_ncm` driver binds to it, and it appears as an ordinary Ethernet interface
+(named `nessum0`, or an `ethN` of your choice) with a MAC, MTU 1500, carrier and VLAN
+support. Existing networking software works unchanged, and no custom kernel driver is
+needed.
+
+The **Ethernet MAC address is stored in the adapter** and can be programmed from Linux:
+
+```sh
+nessumctl mac get                          # active / factory / programmed
+nessumctl mac set 00:50:c2:aa:bb:cc --apply  # persistent; adapter re-enumerates
+nessumctl mac clear --apply                # back to the factory EUI-48
+```
+
+Install the tool on the target with `install -m 0755 host/tools/nessumctl.py /usr/local/bin/nessumctl`
+(it needs only Python 3). See [`docs/MANAGEMENT.md`](docs/MANAGEMENT.md).
 
 > **Status:** Requirements and architecture. Nessum IC selected (Socionext SC1320A,
 > pending a price quote). No schematic or firmware yet. See
@@ -17,8 +30,9 @@ normal network interface (`usb0` / `enx…`). No out-of-tree kernel driver is ne
 | | |
 |---|---|
 | **Host interface** | USB 2.0 High-Speed (480 Mbit/s) device, USB-C or USB-A plug |
-| **Host class** | CDC-NCM network (+ optional CDC-ACM management console) |
-| **Host** | Arm Cortex-A53, arm64 Linux — in-kernel `cdc_ncm` / `cdc_acm` drivers |
+| **Host class** | CDC-NCM network + CDC-ACM management console |
+| **Host** | TI AM6x (Cortex-A53), TI Processor SDK Linux — in-kernel `cdc_ncm` / `cdc_acm` drivers |
+| **MAC address** | Factory EUI-48 by default. Programmable and persistent (EEPROM) via `nessumctl`. `ip link set address` also works. |
 | **Bridge MCU** | NXP i.MX RT1062 (Cortex-M7, on-chip USB HS PHY + 10/100 ENET with RMII) — *proposed* |
 | **Nessum IC** | **Socionext SC1320A** (HD-PLC4, single 3.3 V, ~0.2 W, 7×7 QFN). Fallback: MegaChips MLKHN1501AM. See [spec §4.1](docs/SPECIFICATION.md#41-nessum-ic-selection). |
 | **MCU ↔ Nessum** | RMII MAC-to-MAC (no PHY), 100 Mbit/s; UART for Nessum configuration |
@@ -52,4 +66,6 @@ normal network interface (`usb0` / `enx…`). No out-of-tree kernel driver is ne
 | [`docs/SPECIFICATION.md`](docs/SPECIFICATION.md) | Requirements, architecture, interface choices, safety, open questions |
 | [`hardware/bom.csv`](hardware/bom.csv) | Preliminary bill of materials (major parts only) |
 | [`firmware/README.md`](firmware/README.md) | Bridge-MCU firmware plan (USB stack, NCM ↔ ENET datapath, management) |
-| [`host/linux/`](host/linux/) | Host-side kernel config fragment, udev rule, systemd-networkd config, bring-up check |
+| [`docs/MANAGEMENT.md`](docs/MANAGEMENT.md) | MAC address storage and programming, console protocol, "standard Ethernet" obligations |
+| [`host/linux/`](host/linux/) | TI kernel config fragment, `.link` naming, udev rule, systemd-networkd config, bring-up check |
+| [`host/tools/`](host/tools/) | `nessumctl.py` (MAC programming and status), `fake_adapter.py` protocol simulator, tests (`python3 -m unittest`) |

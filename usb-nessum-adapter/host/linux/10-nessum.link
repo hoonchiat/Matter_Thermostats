@@ -1,0 +1,18 @@
+# systemd .link file: give the Nessum adapter a stable interface name.
+# Install to /etc/systemd/network/ and rebuild the initramfs if it holds .link files.
+#
+# Matches on USB VID:PID (placeholders, spec §7), not on MAC, so the name stays the same
+# after the MAC is reprogrammed with `nessumctl mac set`.
+[Match]
+Driver=cdc_ncm
+Property=ID_VENDOR_ID=1209 ID_MODEL_ID=0000
+
+[Link]
+# Default: a name that cannot collide with the SoC's own ports.
+Name=nessum0
+# If existing software hard-codes an ethN name, choose one the SoC doesn't use.
+# AM62x CPSW normally takes eth0/eth1, so e.g.:
+# Name=eth2
+AlternativeName=nessum-plc
+# Keep the address the adapter reports (programmed with nessumctl); never override it.
+MACAddressPolicy=none

@@ -1,6 +1,6 @@
 # USB 2.0 ↔ Nessum Adapter — Specification
 
-**Document status:** Draft v0.2 (host CPU, media and Nessum IC decided)
+**Document status:** Draft v0.3 (TI host, standard-Ethernet requirement, programmable MAC)
 **Last updated:** 2026-09-30
 
 ---
@@ -37,7 +37,9 @@ port through its USB 2.0 host port, without writing or maintaining a custom kern
 
 | Request term | Interpreted as | Note |
 |---|---|---|
-| **Host CPU** | **Arm Cortex-A53** (confirmed), arm64 Linux | The adapter uses a standard USB class and the host driver is architecture-independent. The exact SoC and kernel version are still needed to check its USB host controller (§9, Q1). |
+| **Host CPU** | **TI Cortex-A53 SoC** (confirmed): Sitara AM62x / AM62A / AM62P / AM64x / AM65x family, TI Processor SDK Linux (arm64) | The adapter uses a standard USB class and the host driver is architecture-independent. The only SoC-specific part is the USB host-controller driver: DWC3 on AM62x/AM65x, Cadence cdns3 on AM64x (§8). The exact part number is still needed (§9, Q1). |
+| **"Standard Ethernet port"** (requirement) | Linux sees an ordinary Ethernet netdev (`ARPHRD_ETHER`, MAC, MTU 1500, carrier, VLAN, multicast), so existing software runs unchanged | Met by CDC-NCM + the in-kernel `cdc_ncm` driver. The firmware obligations and the known differences from a PHY-based NIC are in [MANAGEMENT.md §3](MANAGEMENT.md#3-what-makes-it-look-like-a-standard-ethernet-port-to-linux). |
+| **Programmable MAC** (requirement) | The Ethernet MAC is stored in the adapter and can be changed from Linux | Factory EUI-48 by default. A user-programmed address persists in EEPROM (`nessumctl mac set`). A runtime `ip link set address` also works. See [MANAGEMENT.md §1](MANAGEMENT.md#1-mac-addresses-in-the-adapter). |
 | **USB 2.0** | USB 2.0 **High-Speed** (480 Mbit/s) device | Full-Speed (12 Mbit/s) would bottleneck the link. |
 | **Nessum** | Nessum (formerly HD-PLC), IEEE 1901-2020 wavelet-OFDM | — |
 | **Medium** (confirmed) | **(a)** an existing **twisted pair currently carrying RS-485**, or **(b)** an existing **low-power 24 V AC or 24 V DC** cable | Both are SELV / low-voltage media, **not AC mains** (§6). Assumption: Nessum **replaces** RS-485 signalling on the pair. Sharing the pair with live RS-485 traffic is not planned (§6.1). |
@@ -67,9 +69,9 @@ Linux ─USB HS─► [RT1062 USB device ctrl + PHY] ─NCM NTB unpack─► fra
 - **RMII MAC-to-MAC:** the Nessum IC and the MCU ENET talk directly with no Ethernet PHY.
   One side drives the 50 MHz reference clock (TBD per IC datasheet). Link is fixed at
   100 Mbit/s full-duplex. The RT1062 ENET is configured with no MDIO PHY polling.
-- **Management:** a second USB function (CDC-ACM, `/dev/ttyACM0`) is tunnelled by the MCU
-  to the Nessum IC's UART command interface. Alternative: a vendor-specific interface
-  used from `libusb`. Decide after reading the IC's host-command documentation.
+- **Management:** a second USB function (CDC-ACM, `/dev/ttyACM*`) carries a line-based
+  adapter command protocol (MAC address, status, version, reboot). A `NESSUM` command
+  passes text through to the Nessum IC's UART. See [MANAGEMENT.md](MANAGEMENT.md).
 
 ### 3.3 Throughput budget
 
@@ -214,22 +216,41 @@ FCC Part 15 or CISPR 32).
 | VID:PID | **TBD.** Use a vendor-owned VID or apply for a free PID (e.g. pid.codes for open hardware). Never ship with a borrowed ID. |
 | Configuration | 1 config, bus-powered, `bMaxPower` set from §5 |
 | Function 0 | CDC-NCM (Communication + Data interfaces, IAD) |
-| Function 1 | CDC-ACM management console (optional, IAD) |
-| MAC address | Unique per unit. From MCU OTP/fuses or an EEPROM (e.g. 24AA02E48). Reported in the NCM `iMACAddress` string. |
+| Function 1 | CDC-ACM management console (**required**: MAC programming and status, [MANAGEMENT.md §2](MANAGEMENT.md#2-console-protocol)) |
+| MAC address | Active address (runtime → programmed → factory EUI-48 from the 24AA02E48) reported in the NCM `iMACAddress` string. `bmNetworkCapabilities` advertises `SET/GET_NET_ADDRESS` so `ip link set address` works. See [MANAGEMENT.md §1](MANAGEMENT.md#1-mac-addresses-in-the-adapter). |
+| Max segment | `wMaxSegmentSize` = 1518, so the host gets MTU 1500 with 802.1Q VLAN tags |
+| Packet filter | `SET_ETHERNET_PACKET_FILTER` implemented (promiscuous/multicast for bridges, IPv6, mDNS) |
 | NTB sizes | IN/OUT max ≥ 16 KiB (tune during bring-up) |
-| Link status | NCM `NETWORK_CONNECTION` notification follows the **Nessum** link state, so `carrier` is up on the host only while the adapter has joined a Nessum network |
+| Link status | NCM `NETWORK_CONNECTION` notification follows the **Nessum** link state, so `carrier` is up on the host only while the adapter has joined a Nessum network. `CONNECTION_SPEED_CHANGE` reports the Nessum PHY rate, which `ethtool` displays. |
 
 ---
 
 ## 8. Host-side (Linux) integration
 
-- Kernel: `CONFIG_USB_NET_DRIVERS`, `CONFIG_USB_USBNET`, `CONFIG_USB_NET_CDC_NCM`,
-  `CONFIG_USB_ACM`. See [`../host/linux/kernel.config`](../host/linux/kernel.config).
-- Stable interface name via udev: [`../host/linux/70-nessum.rules`](../host/linux/70-nessum.rules).
-- Network config with systemd-networkd: [`../host/linux/20-nessum.network`](../host/linux/20-nessum.network).
-- Bring-up check script: [`../host/linux/check-adapter.sh`](../host/linux/check-adapter.sh).
-- Userspace management tool (`nessumctl`) over `/dev/ttyACM*`: planned once the IC
-  command set is known.
+Target: TI Processor SDK Linux on an AM6x Cortex-A53 SoC. **No custom kernel driver.**
+
+- **Kernel:** `cdc_ncm` + `cdc_acm`, plus the SoC's USB host controller: DWC3 + `USB_DWC3_AM62`
+  (AM62x/AM62A/AM62P), cdns3 + `USB_CDNS3_TI` (AM64x), DWC3 + Keystone glue (AM65x). The
+  USB port's device-tree node must be in host or OTG mode. See
+  [`../host/linux/kernel.config`](../host/linux/kernel.config).
+- **Interface name:** [`../host/linux/10-nessum.link`](../host/linux/10-nessum.link) names it
+  `nessum0` (or an unused `ethN` if existing software hard-codes one). It matches on USB
+  VID:PID so the name survives MAC changes, and sets `MACAddressPolicy=none` so systemd never
+  replaces the adapter's MAC.
+- **Management console:** [`../host/linux/70-nessum.rules`](../host/linux/70-nessum.rules)
+  creates `/dev/nessum-mgmt`, restricted to root and the `netdev` group.
+- **Network config** (systemd-networkd; the TI SDK's Arago rootfs uses systemd):
+  [`../host/linux/20-nessum.network`](../host/linux/20-nessum.network).
+- **MAC programming and status:** [`../host/tools/nessumctl.py`](../host/tools/nessumctl.py).
+  Python 3, standard library only. Tested against the protocol simulator
+  [`fake_adapter.py`](../host/tools/fake_adapter.py).
+- **Bring-up check:** [`../host/linux/check-adapter.sh`](../host/linux/check-adapter.sh).
+
+**Alternative if the host board can be changed:** the AM62x/AM64x CPSW Ethernet switch
+supports RMII. Wiring the SC1320A straight to a spare CPSW port (fixed-link, no USB and
+no bridge MCU) gives a native `am65-cpsw-nuss` Ethernet port with fewer parts. The MAC then
+comes from the SoC's eFuse or device tree. This is only an option for new host board
+revisions. The USB adapter remains the plan for existing boards.
 
 ---
 
@@ -237,7 +258,9 @@ FCC Part 15 or CISPR 32).
 
 | # | Question | Impact |
 |---|---|---|
-| Q1 | Cortex-A53 confirmed. Which SoC (i.MX 8M, RK3328, Allwinner H5/H6, BCM2837, …) and which kernel version? | USB host-controller quirks, kernel config, test plan |
+| Q1 | TI Cortex-A53 confirmed. Which part (AM62x, AM62A, AM62P, AM64x, AM65x) and which TI SDK / kernel version? Does the rootfs use systemd-udevd or busybox mdev? | Which USB controller block in `kernel.config`, interface-naming method |
+| Q1a | Does existing software need a specific interface name (e.g. `eth1`), or can it use `nessum0`? | `10-nessum.link` |
+| Q1b | Is the MAC programmed per unit in production (from your own OUI block) or in the field? Does it need to be lockable against changes? | Production flow; an optional `MAC LOCK` command |
 | Q2 | ~~Medium~~ Resolved: RS-485 twisted pair or 24 V AC/DC cable. Still open: region, and cable lengths / number of nodes per cable. | EMC band plan, multi-hop need |
 | Q3 | ~~IC~~ Resolved: SC1320A selected (§4.1). Still open: Socionext quote at our volume, datasheet/NDA/SDK access, eval kit. | Final go/no-go on SC1320A vs MLKHN1501AM |
 | Q3a | Does RS-485 traffic need to keep running on the same pair during migration? | Adds a filter per node (§6.1) |

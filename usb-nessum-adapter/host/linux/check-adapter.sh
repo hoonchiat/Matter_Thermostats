@@ -36,16 +36,27 @@ for d in /sys/bus/usb/devices/*; do
 done
 [ "$found" = 1 ] || fail "no cdc_ncm device bound"
 
+say "== Management console"
+if [ -e /dev/nessum-mgmt ]; then
+  ok "/dev/nessum-mgmt present"
+  if command -v nessumctl >/dev/null 2>&1; then
+    say "adapter MAC (active): $(nessumctl mac get -q 2>/dev/null || echo '?')"
+  fi
+else
+  fail "/dev/nessum-mgmt missing - cdc_acm loaded and 70-nessum.rules installed?"
+fi
+
 say "== Network interface $IFACE"
 if [ -d "/sys/class/net/$IFACE" ]; then
   ok "present, mac $(cat "/sys/class/net/$IFACE/address")"
+  say "type $(cat "/sys/class/net/$IFACE/type") (1 = Ethernet), mtu $(cat "/sys/class/net/$IFACE/mtu")"
   if [ "$(cat "/sys/class/net/$IFACE/carrier" 2>/dev/null)" = "1" ]; then
     ok "carrier up (joined a Nessum network)"
   else
     say "note: no carrier - adapter has not joined a Nessum network yet"
   fi
 else
-  fail "interface $IFACE not found (udev rule installed?)"
+  fail "interface $IFACE not found (10-nessum.link installed?)"
 fi
 
 exit $rc

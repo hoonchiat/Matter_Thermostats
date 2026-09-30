@@ -1,12 +1,15 @@
-# Give the USB <-> Nessum adapter stable names on the Linux host.
+# USB <-> Nessum adapter: management console symlink and permissions.
 # Install to /etc/udev/rules.d/ and run: udevadm control --reload && udevadm trigger
+# The network interface name is set by 10-nessum.link (systemd) instead.
 #
 # VID/PID are placeholders (spec §7 / Q7). Replace 1209:0000 with the allocated IDs.
 
-# Network interface -> "nessum0"
-SUBSYSTEM=="net", ACTION=="add", DRIVERS=="cdc_ncm", \
-  ATTRS{idVendor}=="1209", ATTRS{idProduct}=="0000", NAME="nessum0"
-
-# Management console -> /dev/nessum-mgmt
+# Management console -> /dev/nessum-mgmt (used by nessumctl). Changing the MAC is a
+# privileged operation, so only root and the netdev group get access.
 SUBSYSTEM=="tty", ATTRS{idVendor}=="1209", ATTRS{idProduct}=="0000", \
-  SYMLINK+="nessum-mgmt", MODE="0660", GROUP="dialout"
+  SYMLINK+="nessum-mgmt", MODE="0660", GROUP="netdev"
+
+# Without systemd-udevd's .link support (e.g. busybox mdev), name the
+# interface here instead:
+# SUBSYSTEM=="net", ACTION=="add", DRIVERS=="cdc_ncm", \
+#   ATTRS{idVendor}=="1209", ATTRS{idProduct}=="0000", NAME="nessum0"
