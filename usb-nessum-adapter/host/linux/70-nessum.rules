@@ -1,0 +1,12 @@
+# Give the USB <-> Nessum adapter stable names on the Linux host.
+# Install to /etc/udev/rules.d/ and run: udevadm control --reload && udevadm trigger
+#
+# VID/PID are placeholders (spec §7 / Q7). Replace 1209:0000 with the allocated IDs.
+
+# Network interface -> "nessum0"
+SUBSYSTEM=="net", ACTION=="add", DRIVERS=="cdc_ncm", \
+  ATTRS{idVendor}=="1209", ATTRS{idProduct}=="0000", NAME="nessum0"
+
+# Management console -> /dev/nessum-mgmt
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1209", ATTRS{idProduct}=="0000", \
+  SYMLINK+="nessum-mgmt", MODE="0660", GROUP="dialout"
