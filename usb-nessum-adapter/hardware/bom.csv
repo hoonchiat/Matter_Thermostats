@@ -1,16 +1,17 @@
 ref,function,part,qty,notes
 U1,Bridge MCU,NXP MIMXRT1062 (i.MX RT1062),1,"Cortex-M7; on-chip USB2 HS PHY; ENET RMII — proposed, verify package/availability"
-U2,Nessum communication IC,Socionext SC1320A or MegaChips MLKHN1500AM,1,"TBD (spec Q3); RMII + UART host interfaces"
+U2,Nessum communication IC,Socionext SC1320A,1,"Selected (spec §4.1); HD-PLC4; single 3.3V; 7x7 QFN; price on quote. Fallback: MegaChips MLKHN1501AM (~US$8-9 @1k; adds 1.2V rail + 238-LBGA)"
 U3,QSPI NOR flash,8-16 MB 3.3V QSPI NOR,1,RT1062 boot/XIP
 U4,MAC/serial EEPROM,Microchip 24AA02E48 (or MCU OTP),1,Unique EUI-48 per unit
-U5,Buck regulator,5V->3.3V synchronous buck >=1A,1,Size per power budget (spec §5)
-U6,LDO(s),Core/aux rails per RT1062 and Nessum IC datasheets,TBD,
+U5,Buck regulator,5V->3.3V synchronous buck >=1A,1,Only rail needed by the SC1320A; RT1062 core via its internal DCDC
+U6,Line driver,Per SC1320A datasheet/reference design,0-1,TBD - only if the IC needs an external TX driver
 Y1,Crystal,24 MHz,1,RT1062 main clock
 Y2,Oscillator,50 MHz RMII reference,0-1,Only if neither IC sources REF_CLK
-T1,Line coupling transformer,Per Nessum IC vendor reference design,1,Isolation barrier — medium-specific
-C1,Coupling capacitor,X2/Y-rated (mains) or per medium,1,
-F1,Fuse,Line-side fuse,1,Mains only
-D1,Surge protection,MOV/TVS per medium,1-2,
+T1,Line coupling transformer,Wideband 2-28 MHz signal transformer per vendor reference,1,Functional isolation from field wiring
+C1-C2,DC-blocking capacitors,>=100V C0G/X7R (value per reference design),2,One per leg; block 24V AC/DC
+D1,Line TVS,Bidirectional ~36-40V standoff,1,Must not conduct on 24VAC peaks (~34V)
+D3,Common-mode surge protection,GDT or TVS to chassis/shield,0-1,For long outdoor/industrial runs
 D2,USB ESD,Low-capacitance TVS array for D+/D-/VBUS,1,
 J1,USB connector,USB-C receptacle or USB-A plug,1,Spec Q6
-J2,Line connector,Per medium,1,Spec Q2
+J2,Line connector,2-pin 5.08 mm pluggable terminal block,1,Same for RS-485 pair and 24V cable
+FL1,Load-side RF filter (field install),Ferrite/choke low-pass for 24V loads,per load,"Only for the 24V AC/DC medium (spec §6.2); not on the adapter board"

@@ -1,6 +1,6 @@
 # USB 2.0 ↔ Nessum Adapter — Specification
 
-**Document status:** Draft v0.1 (project start)
+**Document status:** Draft v0.2 (host CPU, media and Nessum IC decided)
 **Last updated:** 2026-09-30
 
 ---
@@ -19,8 +19,8 @@ port through its USB 2.0 host port, without writing or maintaining a custom kern
    aggregation delivers far more than that in practice.
 3. **Manageable.** Expose Nessum configuration (network key, role, pairing, firmware
    update, link statistics) to Linux userspace.
-4. **Safe line interface.** Galvanic isolation between the USB/host ground and the
-   medium, with surge and fault protection suited to the target medium.
+4. **Robust line interface.** Functional isolation between the USB/host ground and the
+   field wiring, with surge protection for long runs of low-voltage cable.
 5. **Small and bus-powered** where the power budget allows.
 
 ### 1.2 Non-goals (v1)
@@ -37,9 +37,10 @@ port through its USB 2.0 host port, without writing or maintaining a custom kern
 
 | Request term | Interpreted as | Note |
 |---|---|---|
-| **ARM Cortex-A52** | *Some* Arm Cortex-A application core running Linux | Arm has never made a "Cortex-A52". It is most likely a Cortex-**A53**, **A55**, A510 or A520. The design does not depend on which one: the adapter uses a standard USB class and the host driver is architecture-independent. **Please confirm the exact SoC** (§9, Q1) so the kernel config and USB controller quirks can be checked. |
+| **Host CPU** | **Arm Cortex-A53** (confirmed), arm64 Linux | The adapter uses a standard USB class and the host driver is architecture-independent. The exact SoC and kernel version are still needed to check its USB host controller (§9, Q1). |
 | **USB 2.0** | USB 2.0 **High-Speed** (480 Mbit/s) device | Full-Speed (12 Mbit/s) would bottleneck the link. |
-| **Nessum** | Nessum (formerly HD-PLC), IEEE 1901-2020 wavelet-OFDM | Nessum also runs over non-mains media (coax, twisted pair, DC lines). The medium changes the coupling circuit (§6). |
+| **Nessum** | Nessum (formerly HD-PLC), IEEE 1901-2020 wavelet-OFDM | — |
+| **Medium** (confirmed) | **(a)** an existing **twisted pair currently carrying RS-485**, or **(b)** an existing **low-power 24 V AC or 24 V DC** cable | Both are SELV / low-voltage media, **not AC mains** (§6). Assumption: Nessum **replaces** RS-485 signalling on the pair. Sharing the pair with live RS-485 traffic is not planned (§6.1). |
 
 ---
 
@@ -88,14 +89,53 @@ buffering (≈ 32–64 KiB of frame queue per direction) to absorb bursts.
 | Function | Part | Why | To verify |
 |---|---|---|---|
 | Bridge MCU | **NXP i.MX RT1062** (Cortex-M7, 600 MHz) | On-chip USB 2.0 HS PHY, so no ULPI PHY is needed. 10/100 ENET with RMII. 1 MB on-chip SRAM. Mature USB device stack (MCUXpresso SDK / TinyUSB). | Package and availability. Alternatives: STM32H7 + external ULPI PHY (USB3300), or other HS-PHY + ETH MCUs. |
-| Nessum IC | **Socionext SC1320A** | Has an RMII MAC and a UART/SPI host interface | Datasheet/NDA access, reference AFE, firmware licensing |
-| Nessum IC (alt) | **MegaChips MLKHN1500AM** (single-hop) / **MLKHN1501AM** (multi-hop) | Has MII/RMII and UART host interfaces | Same as above |
+| Nessum IC | **Socionext SC1320A** (**selected**, §4.1) | 4th-generation Nessum (HD-PLC4, IEEE 1901-2020). RMII MAC + UART/SPI host interfaces. Single 3.3 V supply. ~200 mW. 7×7 mm QFN. | Price quote, datasheet/NDA, line-driver needs, eval kit |
+| Nessum IC (fallback) | **MegaChips MLKHN1500AM** (single-hop) / **MLKHN1501AM** (multi-hop) | Earlier generation (HD-PLC3). MII/RMII + UART. Stocked at distributors with published prices. | Only if the SC1320A quote or support falls through |
 | Boot flash | QSPI NOR, 8–16 MB | XIP firmware for the RT1062 | — |
 | Clocking | 24 MHz crystal (RT1062). 50 MHz RMII ref (from the Nessum IC or an oscillator). | — | Which side sources REF_CLK |
-| Line coupling | Nessum-rated coupling transformer + X/Y-rated coupling cap + TVS + fuse | Per the IC vendor reference design | Medium-specific (§6) |
-| Power | 5 V USB → buck 3.3 V → LDOs for 1.1/1.8 V as needed | — | Power budget (§5) |
+| Line coupling | Wideband coupling transformer + DC-blocking capacitors + TVS | Per the IC vendor reference design, adapted for twisted pair / 24 V (§6) | — |
+| Power | 5 V USB → buck 3.3 V (+ RT1062 internal core regulator) | The SC1320A needs only 3.3 V | Power budget (§5) |
 
 A preliminary BOM is in [`../hardware/bom.csv`](../hardware/bom.csv).
+
+### 4.1 Nessum IC selection
+
+Two Nessum ICs are publicly offered with an RMII host interface:
+
+| | **Socionext SC1320A** | **MegaChips MLKHN1500AM / 1501AM** |
+|---|---|---|
+| Generation / standard | HD-PLC4, IEEE 1901-2020 (newest) | HD-PLC3 (earlier generation) |
+| Host interfaces | RMII MAC, UART/SPI | MII/RMII, UART |
+| Supply | **Single 3.3 V** | 3.3 V + 1.2 V |
+| Power (typical) | **~0.2 W** | ~0.57 W active, 0.12 W standby |
+| Package | **7×7 mm QFN**: 4-layer board, easy assembly | 238-ball LBGA, 18×15 mm: finer PCB rules, X-ray inspection |
+| Integrated memory / AFE | AFE integrated. External line driver: TBD from datasheet. | 128 Mb SDRAM + AFE integrated |
+| Reach | Up to 10 km with multi-hop (vendor figure) | 1500AM single-hop, 1501AM multi-hop |
+| Band | 2–28 MHz; runs over twisted pair and DC lines | 2–28 MHz |
+| Price (Sept 2026) | **Not published.** Quote needed from Socionext or its distributor. | **Published:** ~US$8–9 in 1k from the MegaChips store, ~US$14–18 for single units at DigiKey |
+
+**Selected: Socionext SC1320A.** For these media and a USB-powered dongle it wins on
+every technical point:
+
+- **Power.** About a third of the MLKHN1500AM's draw, which leaves plenty of margin in
+  the 2.5 W USB budget (§5).
+- **Board cost.** One supply rail and a QFN instead of a 238-ball BGA mean fewer regulators,
+  a cheaper 4-layer PCB, and simpler assembly and inspection. That offsets a chip price
+  somewhat above the MegaChips part.
+- **Longevity.** It implements the current generation of the standard, where the
+  MLKHN150x is the previous one. That matters for a new design.
+- **Reach.** Multi-hop and long reach suit long RS-485 runs and 24 V building wiring.
+
+**Condition:** SC1320A pricing is not public. Get a quote at the expected volume, and
+confirm Socionext will support low-volume customers, before committing the layout. If the
+quote lands well above ~US$10 in volume, or support is not available, switch to the
+**MLKHN1501AM** (multi-hop variant). The datapath does not change, because both use RMII
+plus UART. What changes is the second supply rail, the BGA footprint and ~0.4 W more in the
+power budget.
+
+**Interoperability:** every node on the same cable must speak the same Nessum generation.
+Confirm with the vendor whether HD-PLC4 and HD-PLC3 nodes interoperate before mixing
+chips, and pick one IC for all nodes.
 
 ---
 
@@ -103,34 +143,66 @@ A preliminary BOM is in [`../hardware/bom.csv`](../hardware/bom.csv).
 
 | Load | Estimate |
 |---|---|
-| Nessum IC | ~0.2–0.25 W typical (vendor figures) |
-| Line driver / AFE (TX) | **TBD.** This is the load most likely to break the USB budget. |
+| SC1320A | ~0.2 W typical (vendor figure) |
+| External line driver (if the datasheet requires one) | **TBD**, allow ~0.3–0.5 W |
 | i.MX RT1062 + QSPI | ~0.3–0.5 W at full speed |
 | Regulator losses | ~15 % |
+| **Estimated total** | **~0.9–1.4 W** |
 | **USB 2.0 budget** | **2.5 W** (500 mA @ 5 V after enumeration) |
 
-If the TX line driver pushes the total over ~2 W, choose one of these:
-
-- Power the adapter from the medium through an isolated AC/DC.
-- Use USB-C with a 1.5 A current advertisement.
-
-Decide once the AFE reference design is in hand.
+The adapter should be **USB bus-powered**, with margin. It never draws power from the
+twisted pair or the 24 V cable, so it adds no load to the existing installation.
+(With the MLKHN1500AM fallback, add ~0.4 W. That still fits.)
 
 ---
 
 ## 6. Line interface & safety
 
-- **Galvanic isolation:** the coupling transformer is the isolation barrier between the
-  host/USB ground and the medium. Creepage and clearance must meet the insulation class
-  required for the medium. For AC mains this is reinforced insulation per IEC 62368-1.
-- **Mains coupling:** X2/Y-rated coupling capacitor, fuse, MOV/TVS surge protection, and a
-  bleeder for the coupling cap. The enclosure must keep mains-connected parts out of reach.
-- **Non-mains media** (coax, twisted pair, DC bus): the coupling network is simpler and
-  the lower insulation requirements may allow bus power with margin.
-- **EMC:** PLC injects conducted RF (roughly 2–28 MHz, or wider depending on band
-  plan). Regional conducted-emission limits and notching (e.g. EN 50561-1 for in-home
-  mains PLC in the EU) apply. Band plan and notch settings live in Nessum IC firmware and
-  must be set per region.
+Both target media are low-voltage (SELV), so the mains-grade safety parts (X2/Y caps,
+fuses, reinforced creepage) are **not needed**. One adapter design with a single
+2-pin line connector covers both media. Only the coupling-capacitor voltage rating and the
+TVS are chosen for the worst case (24 V AC peak ≈ 34 V, plus transients).
+
+Common line-side circuit:
+
+- **Wideband coupling transformer** (per the vendor reference design): keeps the host/USB
+  ground **functionally isolated** from the field wiring. This breaks the ground loops that
+  are common on long RS-485 and 24 V runs.
+- **DC-blocking capacitors** in series on both legs, rated ≥ 100 V: they pass 2–28 MHz and
+  block 24 V DC and 50/60 Hz AC.
+- **Bidirectional TVS** across the line (≈ 36–40 V standoff, so 24 V AC peaks don't
+  trigger it) plus common-mode surge protection. Field cables pick up surges.
+- **Plug-in 2-pin terminal block** (5.08 mm) for the pair.
+
+### 6.1 Medium (a): existing RS-485 twisted pair
+
+- Nessum **replaces** the RS-485 traffic. Remove or disconnect the RS-485 transceivers
+  from the pair. Their input capacitance and the stubs to them load and reflect the MHz
+  signal. RS-485 at high baud rates also overlaps the Nessum band.
+- **120 Ω end terminations:** leave them in for a first test. Nessum usually copes with a
+  resistive load, but check the vendor's guidance on termination for twisted pair.
+- If RS-485 must keep running in parallel on the same pair, a coupling filter (high-pass
+  to Nessum, low-pass to RS-485) is needed on every node. That is out of scope for v1.
+- **Best case of the two media.** A twisted pair has controlled impedance and few
+  branches, so expect the highest throughput and longest reach here.
+
+### 6.2 Medium (b): existing 24 V AC / DC power cable
+
+- The adapter only **injects signal** onto the pair and does not take power from it.
+- **Impedance problem:** every load on the 24 V line (power supply input capacitors,
+  transformers, relays) shorts the high-frequency signal. Plan an **RF choke / ferrite
+  filter at each load and at the 24 V source** (a low-pass that passes 24 V and blocks
+  2–28 MHz). This is the main field-installation cost of this medium.
+- 24 V AC from a transformer is noisy. Switching supplies on 24 V DC are worse. Nessum's
+  wavelet-OFDM with error correction is designed for this, but expect lower throughput
+  than on the twisted pair.
+
+### 6.3 EMC
+
+Signalling at 2–28 MHz on unshielded field wiring radiates. Use the IC's band-plan and
+notch settings to stay out of amateur and broadcast bands for the target region, and
+budget for pre-compliance testing (conducted and radiated emissions for the region, e.g.
+FCC Part 15 or CISPR 32).
 
 ---
 
@@ -165,12 +237,13 @@ Decide once the AFE reference design is in hand.
 
 | # | Question | Impact |
 |---|---|---|
-| Q1 | Exact host SoC and kernel version? ("Cortex-A52" is not an Arm part.) | USB host-controller quirks, kernel config, test plan |
-| Q2 | Which medium: AC mains, DC bus, coax, or twisted pair? Which region? | Coupling/AFE design, safety class, power source, EMC band plan |
-| Q3 | Nessum IC vendor: Socionext SC1320A or MegaChips MLKHN150x? Do we have datasheet/NDA/SDK access? | RMII clocking, management protocol, firmware licensing |
+| Q1 | Cortex-A53 confirmed. Which SoC (i.MX 8M, RK3328, Allwinner H5/H6, BCM2837, …) and which kernel version? | USB host-controller quirks, kernel config, test plan |
+| Q2 | ~~Medium~~ Resolved: RS-485 twisted pair or 24 V AC/DC cable. Still open: region, and cable lengths / number of nodes per cable. | EMC band plan, multi-hop need |
+| Q3 | ~~IC~~ Resolved: SC1320A selected (§4.1). Still open: Socionext quote at our volume, datasheet/NDA/SDK access, eval kit. | Final go/no-go on SC1320A vs MLKHN1501AM |
+| Q3a | Does RS-485 traffic need to keep running on the same pair during migration? | Adds a filter per node (§6.1) |
 | Q4 | Node role: end node only, or also coordinator / multi-hop relay? | IC variant, firmware |
 | Q5 | Throughput and latency targets? | Buffer sizing, IC generation |
-| Q6 | Form factor and connector: dongle with USB-A/C plug, or board with cable? Enclosure? | Mechanical, isolation creepage |
+| Q6 | Form factor: dongle with USB-A/C plug, or board with cable? Enclosure? | Mechanical |
 | Q7 | USB VID/PID ownership? | Descriptors, certification |
 | Q8 | Volume and cost target? | MCU choice (RT1062 vs cheaper HS-PHY part) |
 
