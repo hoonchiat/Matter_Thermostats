@@ -1,8 +1,9 @@
 name: LiteBrowser
 
-# Checks for the lightweight-browser/ Rust project. Linux runs format, lint
-# and unit tests; Windows and macOS compile it, since their WebView backends
-# (WebView2 / WKWebView) take different code paths.
+# Checks for the lightweight-browser/ Rust project, a Linux (WebKitGTK)
+# touch-screen browser: format, lint and unit tests on x86-64, plus a
+# release build on arm64 (Raspberry Pi class boards) for public repos, where
+# GitHub's arm64 runners are available.
 
 on:
   push:
@@ -20,8 +21,8 @@ defaults:
     working-directory: lightweight-browser
 
 jobs:
-  linux:
-    name: Lint + test (Linux)
+  x86_64:
+    name: Lint + test (x86-64)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -36,19 +37,19 @@ jobs:
       - run: cargo fmt --check
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test
+      - run: cargo build --release
 
-  build:
-    name: Build (${{ matrix.os }})
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [windows-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
+  arm64:
+    name: Build + test (arm64)
+    if: ${{ !github.event.repository.private }}
+    runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
+      - name: Install WebKitGTK
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: lightweight-browser
-      - run: cargo build --release
       - run: cargo test
+      - run: cargo build --release

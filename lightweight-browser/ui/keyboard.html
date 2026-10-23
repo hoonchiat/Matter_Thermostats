@@ -1,0 +1,158 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  :root {
+    --bg: #d4d6db; --key: #ffffff; --mod: #aeb3bc; --text: #1d1d1f; --pressed: #8f96a3;
+    --accent: #0a66d8; --accent-text: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1e1e21; --key: #4a4a50; --mod: #333338; --text: #f2f2f4; --pressed: #6c6c74;
+      --accent: #2f7de1; --accent-text: #ffffff;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%; overflow: hidden;
+    background: var(--bg); color: var(--text);
+    font: 20px system-ui, sans-serif;
+    user-select: none; -webkit-user-select: none;
+    touch-action: none; /* no scrolling or zooming the keyboard itself */
+  }
+  #kb { height: 100%; display: flex; flex-direction: column; gap: 6px; padding: 6px; }
+  .row { flex: 1; display: flex; gap: 6px; justify-content: center; }
+  .key {
+    flex: 1 1 0; min-width: 0; max-width: 96px;
+    display: grid; place-items: center;
+    border-radius: 7px; background: var(--key);
+    box-shadow: 0 1px 0 rgba(0, 0, 0, .3);
+  }
+  .key.mod { background: var(--mod); font-size: 16px; }
+  .key.wide { flex-grow: 1.5; max-width: 144px; }
+  .key.space { flex-grow: 5; max-width: none; }
+  .key.enter { flex-grow: 1.8; max-width: 170px; background: var(--accent); color: var(--accent-text); }
+  .key.down { background: var(--pressed); }
+  .key.on { background: var(--accent); color: var(--accent-text); }
+  .key svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2;
+    stroke-linecap: round; stroke-linejoin: round; }
+</style>
+</head>
+<body>
+<div id="kb"></div>
+<script>
+  const ICONS = {
+    shift: '<svg viewBox="0 0 24 24"><path d="M12 4l8 8h-4v7H8v-7H4z"/></svg>',
+    back: '<svg viewBox="0 0 24 24"><path d="M21 5H9l-6 7 6 7h12z"/><path d="M17 9l-6 6M11 9l6 6"/></svg>',
+    enter: '<svg viewBox="0 0 24 24"><path d="M20 5v6a3 3 0 0 1-3 3H5"/><path d="M9 10l-4 4 4 4"/></svg>',
+    hide: '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="11" rx="2"/><path d="M8 19l4 3 4-3"/></svg>',
+    left: '<svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>',
+    right: '<svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>',
+  };
+  // Each key: a character to type, or [label, action, class].
+  const BOTTOM = [["?123", "symbols", "mod wide"], "/", ["space", "space", "space"], ".", [ICONS.left, "ArrowLeft", "mod"],
+    [ICONS.right, "ArrowRight", "mod"], [ICONS.enter, "Enter", "enter"], [ICONS.hide, "hide", "mod"]];
+  const LAYOUTS = {
+    letters: [
+      [..."qwertyuiop"],
+      [..."asdfghjkl"],
+      [[ICONS.shift, "shift", "mod wide"], ..."zxcvbnm", [ICONS.back, "Backspace", "mod wide"]],
+      BOTTOM,
+    ],
+    symbols: [
+      [..."1234567890"],
+      [..."@#$&_-+()"],
+      [["=\\<", "more", "mod wide"], ..."*\"':;!?", [ICONS.back, "Backspace", "mod wide"]],
+      [["ABC", "letters", "mod wide"], ",", ["space", "space", "space"], ".com", [ICONS.left, "ArrowLeft", "mod"],
+        [ICONS.right, "ArrowRight", "mod"], [ICONS.enter, "Enter", "enter"], [ICONS.hide, "hide", "mod"]],
+    ],
+    more: [
+      [..."~`|•√π÷×¶∆"],
+      [..."£€¥^°={}%"],
+      [["?123", "symbols", "mod wide"], ..."\\©®™[]<>", [ICONS.back, "Backspace", "mod wide"]],
+      [["ABC", "letters", "mod wide"], ",", ["space", "space", "space"], ".", [ICONS.left, "ArrowLeft", "mod"],
+        [ICONS.right, "ArrowRight", "mod"], [ICONS.enter, "Enter", "enter"], [ICONS.hide, "hide", "mod"]],
+    ],
+  };
+
+  const send = (msg) => window.ipc.postMessage(JSON.stringify(msg));
+  const kb = document.getElementById("kb");
+  let layout = "letters";
+  let shift = "off"; // "off" | "once" | "lock"
+  let lastShiftTap = 0;
+
+  function render() {
+    kb.innerHTML = "";
+    for (const row of LAYOUTS[layout]) {
+      const div = document.createElement("div");
+      div.className = "row";
+      for (const spec of row) {
+        const [label, action, cls] = Array.isArray(spec) ? spec : [spec, null, ""];
+        const key = document.createElement("div");
+        key.className = "key " + cls;
+        if (action) {
+          key.innerHTML = label;
+          key.dataset.action = action;
+        } else {
+          const ch = shift !== "off" && layout === "letters" ? label.toUpperCase() : label;
+          key.textContent = ch;
+          key.dataset.text = ch;
+        }
+        if (action === "shift" && shift !== "off") key.classList.add("on");
+        div.append(key);
+      }
+      kb.append(div);
+    }
+  }
+
+  function press(key) {
+    const { action, text } = key.dataset;
+    if (text) {
+      send({ cmd: "type", text });
+      if (shift === "once") { shift = "off"; render(); }
+      return;
+    }
+    switch (action) {
+      case "space": send({ cmd: "type", text: " " }); break;
+      case "Backspace": case "Enter": case "ArrowLeft": case "ArrowRight":
+        send({ cmd: "key", key: action }); break;
+      case "hide": send({ cmd: "hide-keyboard" }); break;
+      case "shift": {
+        const now = Date.now();
+        // Tap: shift the next letter. Double-tap: caps lock. Tap again: off.
+        shift = shift === "off" ? "once" : shift === "once" && now - lastShiftTap < 350 ? "lock" : "off";
+        lastShiftTap = now;
+        render();
+        break;
+      }
+      default: layout = action; shift = "off"; render();
+    }
+  }
+
+  // Act on pointerdown for instant response; hold Backspace (or arrows) to repeat.
+  let repeat = null;
+  const stopRepeat = () => {
+    clearTimeout(repeat); clearInterval(repeat); repeat = null;
+    kb.querySelectorAll(".down").forEach((k) => k.classList.remove("down"));
+  };
+  kb.addEventListener("pointerdown", (e) => {
+    const key = e.target.closest(".key");
+    e.preventDefault(); // never take focus away from the field being typed into
+    if (!key) return;
+    stopRepeat();
+    key.classList.add("down");
+    press(key);
+    if (["Backspace", "ArrowLeft", "ArrowRight"].includes(key.dataset.action)) {
+      repeat = setTimeout(() => { repeat = setInterval(() => press(key), 70); }, 450);
+    }
+  });
+  for (const type of ["pointerup", "pointercancel", "pointerleave"]) kb.addEventListener(type, stopRepeat);
+  window.addEventListener("contextmenu", (e) => e.preventDefault());
+
+  // Called from Rust: reset to lowercase letters each time the keyboard opens.
+  window.kbReset = () => { layout = "letters"; shift = "off"; render(); };
+  render();
+</script>
+</body>
+</html>

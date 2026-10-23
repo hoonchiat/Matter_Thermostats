@@ -1,0 +1,52 @@
+<!doctype html>
+<html data-lite-error>
+<head>
+<meta charset="utf-8">
+<title>Page unavailable</title>
+<style>
+  :root { color-scheme: light dark; --muted: #6e6e73; --accent: #0a66d8; }
+  @media (prefers-color-scheme: dark) { :root { --muted: #9a9aa0; --accent: #4c9bff; } }
+  html, body { height: 100%; margin: 0; }
+  body {
+    display: grid; place-items: center; text-align: center; padding: 0 16px;
+    font: 17px system-ui, sans-serif; background: Canvas; color: CanvasText;
+  }
+  h1 { font-weight: 600; font-size: 26px; margin: 0 0 8px; }
+  p { color: var(--muted); margin: 6px 0; overflow-wrap: anywhere; }
+  button {
+    margin-top: 20px; min-width: 160px; min-height: 52px; padding: 0 28px;
+    border: 0; border-radius: 26px; background: var(--accent); color: #fff;
+    font: 600 18px system-ui, sans-serif; touch-action: manipulation;
+  }
+</style>
+</head>
+<body data-url="{{URL}}">
+  <div>
+    <h1>Can't reach this page</h1>
+    <p>{{URL}}</p>
+    <p>{{MESSAGE}}</p>
+    <button id="retry">Retry now</button>
+    <p id="status"></p>
+  </div>
+<script>
+  // Keep retrying with backoff, so a kiosk recovers on its own when the
+  // network or the app's server comes up after the browser.
+  const store = (() => { try { return window.sessionStorage; } catch { return null; } })();
+  const attempt = Number((store && store.getItem("__litebrowserRetry")) || 0);
+  const delay = Math.min(60, 5 * 2 ** attempt);
+  let left = delay;
+  const status = document.getElementById("status");
+  const retry = () => {
+    try { store && store.setItem("__litebrowserRetry", attempt + 1); } catch { /* storage disabled */ }
+    // Not location.reload(): WebKitGTK reloads this substitute page as about:blank.
+    location.replace(document.body.dataset.url);
+  };
+  document.getElementById("retry").onclick = retry;
+  const tick = () => {
+    status.textContent = `Retrying in ${left} s`;
+    if (left-- <= 0) retry(); else setTimeout(tick, 1000);
+  };
+  tick();
+</script>
+</body>
+</html>

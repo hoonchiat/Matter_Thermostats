@@ -17,34 +17,37 @@
   html, body {
     margin: 0; height: 100%; overflow: hidden; user-select: none;
     background: var(--bg); color: var(--text);
-    font: 13px system-ui, -apple-system, "Segoe UI", sans-serif;
+    font: 17px system-ui, sans-serif;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation; /* no double-tap zoom, no tap delay */
   }
   body {
-    display: flex; align-items: center; gap: 4px; padding: 0 8px;
+    display: flex; align-items: center; gap: 4px; padding: 0 6px;
     border-bottom: 1px solid var(--border);
   }
   button {
-    flex: none; width: 30px; height: 30px; border: 0; border-radius: 6px;
+    flex: none; width: 48px; height: 48px; border: 0; border-radius: 10px;
     background: transparent; color: var(--text); cursor: pointer;
     display: grid; place-items: center; padding: 0;
   }
-  button:hover { background: var(--hover); }
-  button svg { width: 16px; height: 16px; fill: none; stroke: currentColor;
+  button:active { background: var(--hover); }
+  @media (hover: hover) { button:hover { background: var(--hover); } }
+  button svg { width: 24px; height: 24px; fill: none; stroke: currentColor;
     stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
   form { flex: 1; min-width: 0; position: relative; }
   #address {
-    width: 100%; height: 30px; padding: 0 12px; border-radius: 15px;
+    width: 100%; height: 44px; padding: 0 16px; border-radius: 22px;
     border: 1px solid var(--border); background: var(--field); color: var(--text);
     font: inherit; outline: none;
   }
   #address:focus { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent); }
   #progress {
-    position: fixed; left: 0; bottom: 0; height: 2px; width: 0;
+    position: fixed; left: 0; bottom: 0; height: 3px; width: 0;
     background: var(--accent); opacity: 0; transition: width .4s ease, opacity .3s;
   }
   body.loading #progress { width: 80%; opacity: 1; transition: width 8s cubic-bezier(.1,.7,.3,1); }
   body.loading #reload .i-reload, body:not(.loading) #reload .i-stop { display: none; }
-  #zoom { flex: none; color: var(--muted); font-size: 12px; min-width: 0; padding: 0 4px; cursor: pointer; }
+  #zoom { flex: none; color: var(--muted); font-size: 15px; min-width: 48px; line-height: 48px; text-align: center; }
   #zoom:empty { display: none; }
 </style>
 </head>
@@ -57,7 +60,7 @@
   </button>
   <button id="home" title="Home"><svg viewBox="0 0 24 24"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/></svg></button>
   <form id="bar" autocomplete="off">
-    <input id="address" spellcheck="false" placeholder="Search or enter address">
+    <input id="address" type="text" spellcheck="false" autocapitalize="off" placeholder="Search or enter address">
   </form>
   <span id="zoom" title="Reset zoom (Ctrl+0)"></span>
   <button id="devtools" title="Developer tools (F12)"><svg viewBox="0 0 24 24"><path d="M8 6l-6 6 6 6M16 6l6 6-6 6"/></svg></button>

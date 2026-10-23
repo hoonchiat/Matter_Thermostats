@@ -1,0 +1,30 @@
+# Boots straight into LiteBrowser, fullscreen, on a Wayland kiosk compositor.
+#
+#   sudo apt install cage
+#   sudo cp litebrowser-kiosk.service /etc/systemd/system/
+#   sudo systemctl edit litebrowser-kiosk   # set User= and the URL
+#   sudo systemctl enable --now litebrowser-kiosk
+#
+# cage runs one app fullscreen and turns touch input into Wayland touch events.
+
+[Unit]
+Description=LiteBrowser touch-screen kiosk
+After=systemd-user-sessions.service network-online.target
+Wants=network-online.target
+Conflicts=getty@tty1.service
+
+[Service]
+User=kiosk
+PAMName=login
+TTYPath=/dev/tty1
+StandardInput=tty
+StandardOutput=journal
+StandardError=journal
+Environment=XDG_SESSION_TYPE=wayland
+# Add --no-gpu if the board's GPU driver renders pages incorrectly.
+ExecStart=/usr/bin/cage -- /usr/local/bin/litebrowser --kiosk http://localhost:3000
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=graphical.target
