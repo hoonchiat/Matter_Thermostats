@@ -2,6 +2,8 @@
 
 use std::path::PathBuf;
 
+use crate::layout::Toolbar;
+
 pub const USAGE: &str = "\
 Usage: litebrowser [OPTIONS] [URL | FILE | FOLDER]
 
@@ -11,6 +13,8 @@ A local FOLDER (e.g. a React build's dist/) or FILE is served on a private
 Display:
       --fullscreen         Start fullscreen, without window decorations
       --no-toolbar         Hide the toolbar (address bar and buttons)
+      --toolbar-bottom     Put the toolbar at the bottom, within reach on tall
+                           portrait screens
       --hide-cursor        Hide the mouse pointer (touch-only screens)
       --kiosk              All three above, plus no context menu and no devtools
       --zoom <FACTOR>      Initial page zoom, e.g. 1.5 on small high-DPI panels
@@ -56,7 +60,7 @@ pub struct Options {
     pub incognito: bool,
     pub no_serve: bool,
     pub fullscreen: bool,
-    pub toolbar: bool,
+    pub toolbar: Toolbar,
     pub hide_cursor: bool,
     pub kiosk: bool,
     pub zoom: f64,
@@ -74,7 +78,7 @@ impl Default for Options {
             incognito: false,
             no_serve: false,
             fullscreen: false,
-            toolbar: true,
+            toolbar: Toolbar::Top,
             hide_cursor: false,
             kiosk: false,
             zoom: 1.0,
@@ -101,14 +105,10 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Parsed, String> {
             "--incognito" => opts.incognito = true,
             "--no-serve" => opts.no_serve = true,
             "--fullscreen" => opts.fullscreen = true,
-            "--no-toolbar" => opts.toolbar = false,
+            "--no-toolbar" => opts.toolbar = Toolbar::Hidden,
+            "--toolbar-bottom" => opts.toolbar = Toolbar::Bottom,
             "--hide-cursor" => opts.hide_cursor = true,
-            "--kiosk" => {
-                opts.kiosk = true;
-                opts.fullscreen = true;
-                opts.toolbar = false;
-                opts.hide_cursor = true;
-            }
+            "--kiosk" => opts.kiosk = true,
             "--no-gpu" => opts.gpu = false,
             "--devtools" => opts.devtools = true,
             "--home" => opts.home = Some(crate::address::resolve(&value("--home", &mut args)?)),
@@ -135,6 +135,11 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Parsed, String> {
             },
         }
     }
+    if opts.kiosk {
+        opts.fullscreen = true;
+        opts.toolbar = Toolbar::Hidden;
+        opts.hide_cursor = true;
+    }
     if opts.kiosk && opts.devtools {
         return Err("--devtools cannot be used with --kiosk".into());
     }
@@ -159,7 +164,7 @@ mod tests {
     #[test]
     fn defaults_suit_a_touch_screen() {
         let o = run(&[]).unwrap();
-        assert!(o.toolbar && o.gpu && !o.fullscreen);
+        assert!(o.toolbar == Toolbar::Top && o.gpu && !o.fullscreen);
         assert_eq!(o.keyboard, KeyboardMode::On);
         assert_eq!(o.zoom, 1.0);
     }
@@ -167,8 +172,12 @@ mod tests {
     #[test]
     fn kiosk_implies_fullscreen_without_chrome() {
         let o = run(&["--kiosk", "localhost:3000"]).unwrap();
-        assert!(o.kiosk && o.fullscreen && o.hide_cursor && !o.toolbar);
+        assert!(o.kiosk && o.fullscreen && o.hide_cursor && o.toolbar == Toolbar::Hidden);
         assert_eq!(o.url.as_deref(), Some("http://localhost:3000"));
+        // Whatever the flag order, kiosk wins over a toolbar position.
+        let o = run(&["--toolbar-bottom", "--kiosk"]).unwrap();
+        assert_eq!(o.toolbar, Toolbar::Hidden);
+        assert_eq!(run(&["--toolbar-bottom"]).unwrap().toolbar, Toolbar::Bottom);
     }
 
     #[test]

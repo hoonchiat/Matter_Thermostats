@@ -23,6 +23,10 @@ StandardError=journal
 Environment=XDG_SESSION_TYPE=wayland
 # Add --no-gpu if the board's GPU driver renders pages incorrectly.
 ExecStart=/usr/bin/cage -- /usr/local/bin/litebrowser --kiosk http://localhost:3000
+# Portrait (1080x1920) with a landscape panel mounted on its side: rotate the
+# output inside cage first (apt install wlr-randr; find the output name with
+# `wlr-randr`; use 270 to turn the other way), and use this line instead:
+# ExecStart=/usr/bin/cage -- sh -c 'wlr-randr --output HDMI-A-1 --transform 90; exec /usr/local/bin/litebrowser --kiosk http://localhost:3000'
 Restart=always
 RestartSec=2
 

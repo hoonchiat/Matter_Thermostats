@@ -25,6 +25,9 @@
     display: flex; align-items: center; gap: 4px; padding: 0 6px;
     border-bottom: 1px solid var(--border);
   }
+  /* --toolbar-bottom: divider and progress bar move to the top edge. */
+  body.bottom { border-bottom: 0; border-top: 1px solid var(--border); }
+  body.bottom #progress { bottom: auto; top: 0; }
   button {
     flex: none; width: 48px; height: 48px; border: 0; border-radius: 10px;
     background: transparent; color: var(--text); cursor: pointer;
@@ -69,6 +72,7 @@
   const $ = (id) => document.getElementById(id);
   const send = (cmd, extra) => window.ipc.postMessage(JSON.stringify({ cmd, ...extra }));
   const address = $("address");
+  if (window.__liteToolbarBottom) document.body.classList.add("bottom");
 
   $("back").onclick = () => send("back");
   $("forward").onclick = () => send("forward");

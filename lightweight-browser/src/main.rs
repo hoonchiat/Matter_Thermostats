@@ -112,6 +112,7 @@ fn main() -> wry::Result<()> {
 
     let (width, height) = logical_size(&window);
     let areas = layout::compute(height, opts.toolbar, false);
+    let toolbar_bottom = opts.toolbar == layout::Toolbar::Bottom;
     let prelude = |toolbar: bool| {
         format!(
             "window.__liteToolbar = {toolbar};\nwindow.__liteKeyboard = {:?};\n{INJECT_JS}",
@@ -144,11 +145,14 @@ fn main() -> wry::Result<()> {
         None
     };
 
-    let toolbar = if opts.toolbar {
+    let toolbar = if opts.toolbar != layout::Toolbar::Hidden {
         let webview = WebViewBuilder::new()
             .with_bounds(rect(width, areas.toolbar))
             .with_html(TOOLBAR_HTML)
-            .with_initialization_script(prelude(true))
+            .with_initialization_script(format!(
+                "window.__liteToolbarBottom = {toolbar_bottom};\n{}",
+                prelude(true)
+            ))
             .with_ipc_handler(ipc_handler(proxy.clone(), Source::Toolbar))
             .with_hotkeys_zoom(false)
             .build_gtk(&fixed)?;
@@ -407,7 +411,7 @@ impl Browser {
 
     fn relayout(&self) {
         let (width, height) = logical_size(&self.window);
-        let areas = layout::compute(height, self.toolbar.is_some(), self.keyboard_for.is_some());
+        let areas = layout::compute(height, self.opts.toolbar, self.keyboard_for.is_some());
         if let Some(toolbar) = &self.toolbar {
             self.place(toolbar, width, areas.toolbar);
         }

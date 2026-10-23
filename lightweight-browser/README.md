@@ -66,6 +66,8 @@ litebrowser [OPTIONS] [URL | FILE | FOLDER]
 Display:
       --fullscreen         Start fullscreen, without window decorations
       --no-toolbar         Hide the toolbar (address bar and buttons)
+      --toolbar-bottom     Put the toolbar at the bottom, within reach on tall
+                           portrait screens
       --hide-cursor        Hide the mouse pointer (touch-only screens)
       --kiosk              All three above, plus no context menu and no devtools
       --zoom <FACTOR>      Initial page zoom, e.g. 1.5 on small high-DPI panels
@@ -91,6 +93,7 @@ litebrowser --fullscreen react.dev              # fullscreen browsing
 litebrowser --kiosk http://localhost:3000       # lock the screen to your app
 litebrowser --kiosk --zoom 1.25 /opt/app/dist   # serve a React build, slightly larger
 litebrowser --keyboard off localhost:5173       # desk testing with a real keyboard
+litebrowser --fullscreen --toolbar-bottom react.dev   # portrait kiosk, browsing allowed
 ```
 
 ### Running as a kiosk at boot
@@ -109,14 +112,53 @@ sudo systemctl enable --now litebrowser-kiosk
 On X11 without a desktop, `xinit /usr/local/bin/litebrowser --kiosk URL -- -nocursor`
 works too.
 
+### Portrait screens
+
+LiteBrowser has no orientation setting of its own. It fills whatever window it gets and
+re-lays out on every resize or rotation. On a 1080×1920 portrait screen:
+
+- The on-screen keyboard spans the full 1080 px width with ~96 px keys and takes
+  340 px at the bottom, leaving the page about 1500 px while typing.
+- On a tall wall- or floor-standing kiosk, `--toolbar-bottom` keeps the address bar and
+  buttons at a comfortable height. When the keyboard opens, the toolbar sits directly
+  above it.
+- 1080 px wide is a phone-like layout for most React apps: their responsive "mobile"
+  breakpoints apply. Use `--zoom` if the panel is physically large and text looks small
+  from a distance, for example `--zoom 1.25` on a 32″ screen.
+
+**If the panel is natively portrait** (it reports 1080×1920 itself), nothing needs
+rotating.
+
+**If it is a landscape panel mounted on its side** (it reports 1920×1080), rotate the
+output *and* the touch input so taps land where they look like they do:
+
+| Session | Rotate the screen | Rotate touch to match |
+|---|---|---|
+| cage / other wlroots | `wlr-randr --output HDMI-A-1 --transform 90` (or `270`) | usually follows the output; if not, use the udev rule below |
+| X11 | `xrandr --output HDMI-1 --rotate right` (or `left`) | `xinput set-prop "<touch device>" "Coordinate Transformation Matrix" 0 1 0 -1 0 1 0 0 1` (for `left`: `0 -1 1 1 0 0 0 0 1`) |
+| Raspberry Pi OS desktop | Screen Configuration → Orientation | follows the screen |
+
+Run `wlr-randr` or `xrandr` with no arguments to find the output name, and
+`xinput list` to find the touch device.
+
+Any session, permanently via libinput: create `/etc/udev/rules.d/99-touch-rotate.rules`,
+with your device name from `libinput list-devices`:
+
+```
+# 90° clockwise. Use "0 1 0 -1 0 1" for 90° counter-clockwise.
+ENV{ID_INPUT_TOUCHSCREEN}=="1", ATTRS{name}=="<touch device name>", ENV{LIBINPUT_CALIBRATION_MATRIX}="0 -1 1 1 0 0"
+```
+
+If taps come out mirrored or on the wrong side after rotating, you have the opposite
+direction: swap to the other matrix. The kiosk service file shows how to rotate inside
+cage.
+
 ### Touch-screen tips
 
 - **Touch acts like a mouse?** On X11, GTK needs XInput 2 to receive real touch events.
   Make sure `GDK_CORE_DEVICE_EVENTS` is not set. Wayland (cage, weston, GNOME, Phosh)
   delivers touch natively.
-- **Wrong orientation or touch offset**: rotate the output in the compositor (for
-  example `wlr-randr --transform 90`) and map the touch device to it. LiteBrowser
-  re-lays out whenever its window is resized or rotated.
+- **Wrong orientation or touch offset**: see [Portrait screens](#portrait-screens).
 - **Text too small on a high-DPI panel**: use `--zoom 1.5`, or `GDK_SCALE=2` to scale
   the toolbar and keyboard too.
 - **Blank or flickering pages** on some ARM GPUs: try `--no-gpu`.
