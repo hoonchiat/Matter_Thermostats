@@ -1,0 +1,54 @@
+name: LiteBrowser
+
+# Checks for the lightweight-browser/ Rust project. Linux runs format, lint
+# and unit tests; Windows and macOS compile it, since their WebView backends
+# (WebView2 / WKWebView) take different code paths.
+
+on:
+  push:
+    branches: ["**"]
+    paths: ["lightweight-browser/**", ".github/workflows/browser.yml"]
+  pull_request:
+    paths: ["lightweight-browser/**", ".github/workflows/browser.yml"]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: lightweight-browser
+
+jobs:
+  linux:
+    name: Lint + test (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install WebKitGTK
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: lightweight-browser
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test
+
+  build:
+    name: Build (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: lightweight-browser
+      - run: cargo build --release
+      - run: cargo test

@@ -1,0 +1,94 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  :root {
+    --bg: #f3f3f5; --field: #ffffff; --text: #1d1d1f; --muted: #6e6e73;
+    --border: #d2d2d7; --hover: #e4e4e8; --accent: #0a66d8;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #26262a; --field: #1b1b1e; --text: #f2f2f4; --muted: #9a9aa0;
+      --border: #3a3a40; --hover: #34343a; --accent: #4c9bff;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%; overflow: hidden; user-select: none;
+    background: var(--bg); color: var(--text);
+    font: 13px system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  body {
+    display: flex; align-items: center; gap: 4px; padding: 0 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  button {
+    flex: none; width: 30px; height: 30px; border: 0; border-radius: 6px;
+    background: transparent; color: var(--text); cursor: pointer;
+    display: grid; place-items: center; padding: 0;
+  }
+  button:hover { background: var(--hover); }
+  button svg { width: 16px; height: 16px; fill: none; stroke: currentColor;
+    stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  form { flex: 1; min-width: 0; position: relative; }
+  #address {
+    width: 100%; height: 30px; padding: 0 12px; border-radius: 15px;
+    border: 1px solid var(--border); background: var(--field); color: var(--text);
+    font: inherit; outline: none;
+  }
+  #address:focus { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent); }
+  #progress {
+    position: fixed; left: 0; bottom: 0; height: 2px; width: 0;
+    background: var(--accent); opacity: 0; transition: width .4s ease, opacity .3s;
+  }
+  body.loading #progress { width: 80%; opacity: 1; transition: width 8s cubic-bezier(.1,.7,.3,1); }
+  body.loading #reload .i-reload, body:not(.loading) #reload .i-stop { display: none; }
+  #zoom { flex: none; color: var(--muted); font-size: 12px; min-width: 0; padding: 0 4px; cursor: pointer; }
+  #zoom:empty { display: none; }
+</style>
+</head>
+<body>
+  <button id="back" title="Back (Alt+Left)"><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg></button>
+  <button id="forward" title="Forward (Alt+Right)"><svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg></button>
+  <button id="reload" title="Reload (Ctrl+R) / Stop (Esc)">
+    <svg class="i-reload" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+    <svg class="i-stop" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+  </button>
+  <button id="home" title="Home"><svg viewBox="0 0 24 24"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/></svg></button>
+  <form id="bar" autocomplete="off">
+    <input id="address" spellcheck="false" placeholder="Search or enter address">
+  </form>
+  <span id="zoom" title="Reset zoom (Ctrl+0)"></span>
+  <button id="devtools" title="Developer tools (F12)"><svg viewBox="0 0 24 24"><path d="M8 6l-6 6 6 6M16 6l6 6-6 6"/></svg></button>
+  <div id="progress"></div>
+<script>
+  const $ = (id) => document.getElementById(id);
+  const send = (cmd, extra) => window.ipc.postMessage(JSON.stringify({ cmd, ...extra }));
+  const address = $("address");
+
+  $("back").onclick = () => send("back");
+  $("forward").onclick = () => send("forward");
+  $("home").onclick = () => send("home");
+  $("devtools").onclick = () => send("toggle-devtools");
+  $("zoom").onclick = () => send("zoom-reset");
+  $("reload").onclick = () => send(document.body.classList.contains("loading") ? "stop" : "reload");
+  $("bar").onsubmit = (e) => {
+    e.preventDefault();
+    send("navigate", { input: address.value });
+    address.blur();
+  };
+  address.addEventListener("focus", () => address.select());
+
+  // Called from Rust via evaluate_script.
+  window.ui = {
+    setUrl(url) {
+      if (document.activeElement !== address) address.value = url === "about:blank" ? "" : url;
+    },
+    setLoading(on) { document.body.classList.toggle("loading", on); },
+    setZoom(pct) { $("zoom").textContent = pct === 100 ? "" : pct + "%"; },
+    focusAddress() { address.focus(); address.select(); },
+  };
+</script>
+</body>
+</html>

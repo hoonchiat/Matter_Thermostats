@@ -1,0 +1,22 @@
+[package]
+name = "litebrowser"
+version = "0.1.0"
+edition = "2021"
+description = "A lightweight HTML5 web browser built on the operating system's native WebView"
+license = "Apache-2.0"
+
+[dependencies]
+tao = "0.37"
+wry = { version = "0.57", features = ["devtools"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[target.'cfg(any(target_os = "linux", target_os = "dragonfly", target_os = "freebsd", target_os = "netbsd", target_os = "openbsd"))'.dependencies]
+gtk = "0.18"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"

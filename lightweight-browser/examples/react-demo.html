@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>React + HTML5 check</title>
+<!-- React 19 straight from a CDN, no build step: ES modules + import maps. -->
+<script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@19.1.0",
+    "react-dom/client": "https://esm.sh/react-dom@19.1.0/client",
+    "htm": "https://esm.sh/htm@3.1.1"
+  }
+}
+</script>
+<style>
+  :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+  body { max-width: 720px; margin: 32px auto; padding: 0 16px; }
+  ul { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 6px; padding: 0; list-style: none; }
+  li { padding: 6px 10px; border-radius: 6px; background: color-mix(in srgb, CanvasText 6%, Canvas); }
+  .ok::before { content: "✔ "; color: #1a9b4b; } .no::before { content: "✘ "; color: #d33; }
+  button { font: inherit; padding: 6px 14px; }
+</style>
+</head>
+<body>
+<div id="root"><p>Loading React…</p></div>
+<script type="module">
+  import { useState, useEffect } from "react";
+  import { createRoot } from "react-dom/client";
+  import htm from "htm";
+  import { createElement } from "react";
+  const html = htm.bind(createElement);
+
+  const checks = {
+    "ES modules + import maps": () => HTMLScriptElement.supports?.("importmap"),
+    "Canvas 2D": () => !!document.createElement("canvas").getContext("2d"),
+    "WebGL": () => !!document.createElement("canvas").getContext("webgl"),
+    "localStorage": () => { localStorage.setItem("t", "1"); return localStorage.getItem("t") === "1"; },
+    "IndexedDB": () => !!window.indexedDB,
+    "fetch / Promise": () => typeof fetch === "function",
+    "Web Workers": () => typeof Worker === "function",
+    "WebSocket": () => typeof WebSocket === "function",
+    "Custom Elements": () => !!window.customElements,
+    "<video> / <audio>": () => !!document.createElement("video").canPlayType,
+    "CSS grid": () => CSS.supports("display", "grid"),
+    "CSS :has()": () => CSS.supports("selector(:has(a))"),
+    "History API (SPA routing)": () => typeof history.pushState === "function",
+    "structuredClone": () => typeof structuredClone === "function",
+  };
+
+  function App() {
+    const [count, setCount] = useState(0);
+    const [results, setResults] = useState([]);
+    useEffect(() => {
+      setResults(Object.entries(checks).map(([name, fn]) => {
+        try { return [name, !!fn()]; } catch { return [name, false]; }
+      }));
+      document.title = "React OK";
+    }, []);
+    const passed = results.filter(([, ok]) => ok).length;
+    return html`
+      <h1>React ${React_VERSION} is running</h1>
+      <p><button onClick=${() => setCount(c => c + 1)}>Clicked ${count} times</button></p>
+      <h2>HTML5 features: ${passed}/${results.length}</h2>
+      <ul>${results.map(([n, ok]) => html`<li key=${n} class=${ok ? "ok" : "no"}>${n}</li>`)}</ul>`;
+  }
+  import * as React from "react";
+  const React_VERSION = React.version;
+  createRoot(document.getElementById("root")).render(html`<${App} />`);
+</script>
+</body>
+</html>
