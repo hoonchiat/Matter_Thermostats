@@ -42,6 +42,13 @@ CSS grid/`:has()`, the History API for client-side routing, and Touch/Pointer Ev
 - Pop-ups and `target="_blank"` links open in the current view.
 - Follows the system light/dark theme. Developer tools via the `<>` button or F12.
 
+## Testing on your device
+
+[`TESTING.md`](TESTING.md) walks through it step by step: download a prebuilt binary
+from CI (x86-64 or arm64) or build on the device, run `tools/check-device.sh`, work
+through the touch/keyboard checklist in `examples/hardware-test.html`, then try your own
+React app and kiosk mode.
+
 ## Build
 
 Requires Rust 1.80+ and the WebKitGTK 4.1 development files.

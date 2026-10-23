@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hardware test</title>
+<!-- Works offline: open it with `litebrowser examples/hardware-test.html`. -->
+<style>
+  :root { color-scheme: light dark; --ok: #1a9b4b; --bad: #d33; --muted: #888; --line: #8884; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 18px system-ui, sans-serif; background: Canvas; color: CanvasText; }
+  main { max-width: 1000px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; }
+  section { border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+  h1 { font-size: 26px; margin: 0; }
+  h2 { font-size: 20px; margin: 0 0 8px; }
+  p { margin: 6px 0; }
+  .muted { color: var(--muted); font-size: 15px; }
+  .ok { color: var(--ok); } .bad { color: var(--bad); }
+  #pad {
+    position: relative; height: 420px; border-radius: 10px; touch-action: none;
+    background: repeating-linear-gradient(0deg, var(--line) 0 1px, transparent 1px 60px),
+                repeating-linear-gradient(90deg, var(--line) 0 1px, transparent 1px 60px);
+  }
+  .dot { position: absolute; width: 70px; height: 70px; margin: -35px 0 0 -35px; border-radius: 50%;
+    border: 3px solid #0a66d8; background: #0a66d833; pointer-events: none; }
+  .corner { position: absolute; width: 90px; height: 90px; border-radius: 10px; display: grid; place-items: center;
+    font-size: 15px; background: #8882; touch-action: manipulation; }
+  .corner.hit { background: var(--ok); color: #fff; }
+  #c0 { left: 0; top: 0; } #c1 { right: 0; top: 0; } #c2 { left: 0; bottom: 0; } #c3 { right: 0; bottom: 0; }
+  input, textarea { font: inherit; padding: 10px; width: 100%; margin: 4px 0 10px; }
+  [contenteditable] { border: 1px solid var(--line); padding: 10px; min-height: 48px; border-radius: 4px; }
+  button { font: inherit; min-height: 52px; padding: 0 20px; margin: 4px 8px 4px 0; border-radius: 10px; }
+  ul { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 4px 16px; padding: 0; list-style: none; margin: 0; }
+  li::before { content: "✔ "; color: var(--ok); } li.no::before { content: "✘ "; color: var(--bad); }
+  pre { white-space: pre-wrap; margin: 0; font-size: 15px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>LiteBrowser hardware test</h1>
+
+  <section>
+    <h2>1. Screen</h2>
+    <pre id="screen"></pre>
+  </section>
+
+  <section>
+    <h2>2. Touch alignment and multi-touch</h2>
+    <p>Put one or more fingers on the grid: a circle must appear <b>directly under each finger</b>.
+      Then tap the four corner squares.</p>
+    <div id="pad">
+      <div class="corner" id="c0">tap</div><div class="corner" id="c1">tap</div>
+      <div class="corner" id="c2">tap</div><div class="corner" id="c3">tap</div>
+    </div>
+    <p id="touch">Input type: <b>not yet touched</b></p>
+    <p class="muted">"mouse" when you used a finger means touch is being emulated as a mouse:
+      see "Touch acts like a mouse?" in the README. Circles offset, mirrored or rotated mean the
+      touch input isn't rotated to match the screen: see "Portrait screens".</p>
+  </section>
+
+  <section>
+    <h2>3. On-screen keyboard</h2>
+    <p>Tap each field: the keyboard should slide up and keep the field visible.</p>
+    <label>Text <input id="t1" placeholder="Type here"></label>
+    <label>Number <input type="number" placeholder="123"></label>
+    <label>Email <input type="email" placeholder="name@example.com"></label>
+    <label>Text area <textarea rows="2" placeholder="Enter adds a new line"></textarea></label>
+    <div contenteditable="true" aria-label="Rich text">Editable text</div>
+    <form id="form"><label>Press Enter on the keyboard to submit <input id="t2"></label></form>
+    <p id="submitted" class="muted">Not submitted yet</p>
+  </section>
+
+  <section>
+    <h2>4. Gestures and navigation</h2>
+    <p>Pinch the grid above to zoom (two fingers), then pinch back.</p>
+    <button id="push">Add history entry</button>
+    <p id="hist" class="muted"></p>
+    <p class="muted">After adding a few entries, swipe from the left screen edge to go back.
+      The number above should go down and the address bar should follow.</p>
+    <button id="open">Open a pop-up (window.open)</button>
+  </section>
+
+  <section>
+    <h2>5. HTML5 features</h2>
+    <ul id="features"></ul>
+  </section>
+
+  <section>
+    <h2>6. Performance</h2>
+    <p>Animation frame rate: <b id="fps">measuring…</b></p>
+    <p class="muted">Below about 40 fps while idle, try <code>--no-gpu</code> and compare.</p>
+  </section>
+</main>
+<script>
+  const $ = (id) => document.getElementById(id);
+
+  const showScreen = () => {
+    $("screen").textContent =
+      `Screen:     ${screen.width} × ${screen.height}\n` +
+      `Window:     ${innerWidth} × ${innerHeight} (CSS px)\n` +
+      `Pixel ratio: ${devicePixelRatio}\n` +
+      `Orientation: ${screen.orientation ? screen.orientation.type : (innerHeight > innerWidth ? "portrait" : "landscape")}\n` +
+      `Touch points supported: ${navigator.maxTouchPoints}\n` +
+      `Engine: ${navigator.userAgent}`;
+  };
+  showScreen();
+  addEventListener("resize", showScreen);
+
+  // Touch: one circle per active pointer.
+  const pad = $("pad"), dots = new Map();
+  let maxPoints = 0;
+  const place = (e) => {
+    let dot = dots.get(e.pointerId);
+    if (!dot) { dot = document.createElement("div"); dot.className = "dot"; pad.append(dot); dots.set(e.pointerId, dot); }
+    const r = pad.getBoundingClientRect();
+    dot.style.left = e.clientX - r.left + "px";
+    dot.style.top = e.clientY - r.top + "px";
+  };
+  const report = (e) => {
+    maxPoints = Math.max(maxPoints, dots.size);
+    $("touch").innerHTML = `Input type: <b class="${e.pointerType === "touch" ? "ok" : "bad"}">${e.pointerType}</b>` +
+      ` · fingers now: <b>${dots.size}</b> · most at once: <b>${maxPoints}</b>`;
+  };
+  pad.addEventListener("pointerdown", (e) => { pad.setPointerCapture(e.pointerId); place(e); report(e); });
+  pad.addEventListener("pointermove", (e) => { if (dots.has(e.pointerId)) place(e); });
+  const lift = (e) => { dots.get(e.pointerId)?.remove(); dots.delete(e.pointerId); report(e); };
+  pad.addEventListener("pointerup", lift);
+  pad.addEventListener("pointercancel", lift);
+  for (const c of document.querySelectorAll(".corner")) {
+    c.addEventListener("pointerdown", (e) => { e.stopPropagation(); c.classList.add("hit"); c.textContent = "✔"; });
+  }
+
+  $("form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    $("submitted").textContent = `Submitted: "${$("t2").value}"`;
+    $("submitted").className = "ok";
+  });
+
+  let entries = 0;
+  const showHist = () => { $("hist").textContent = `History entries added: ${location.hash ? Number(location.hash.slice(2)) : 0}`; };
+  $("push").onclick = () => { entries = (Number(location.hash.slice(2)) || 0) + 1; history.pushState({}, "", `#/${entries}`); showHist(); };
+  addEventListener("popstate", showHist);
+  showHist();
+  $("open").onclick = () => window.open("about:blank#popup-opened-in-place");
+
+  const checks = {
+    "ES modules": () => "noModule" in HTMLScriptElement.prototype,
+    "Import maps": () => HTMLScriptElement.supports && HTMLScriptElement.supports("importmap"),
+    "Canvas 2D": () => !!document.createElement("canvas").getContext("2d"),
+    "WebGL": () => !!document.createElement("canvas").getContext("webgl"),
+    "WebGL 2": () => !!document.createElement("canvas").getContext("webgl2"),
+    "localStorage": () => { localStorage.setItem("t", "1"); return localStorage.getItem("t") === "1"; },
+    "IndexedDB": () => !!window.indexedDB,
+    "fetch": () => typeof fetch === "function",
+    "Web Workers": () => typeof Worker === "function",
+    "WebSocket": () => typeof WebSocket === "function",
+    "Service Workers": () => "serviceWorker" in navigator,
+    "Custom Elements": () => !!window.customElements,
+    "Pointer Events": () => typeof PointerEvent === "function",
+    "Touch Events": () => "ontouchstart" in window,
+    "<video> H.264": () => !!document.createElement("video").canPlayType('video/mp4; codecs="avc1.42E01E"'),
+    "<video> WebM VP9": () => !!document.createElement("video").canPlayType('video/webm; codecs="vp9"'),
+    "Web Audio": () => typeof AudioContext === "function",
+    "CSS grid": () => CSS.supports("display", "grid"),
+    "CSS :has()": () => CSS.supports("selector(:has(a))"),
+    "CSS container queries": () => CSS.supports("container-type", "inline-size"),
+    "History API": () => typeof history.pushState === "function",
+    "structuredClone": () => typeof structuredClone === "function",
+  };
+  for (const [name, fn] of Object.entries(checks)) {
+    let ok = false;
+    try { ok = !!fn(); } catch { /* unsupported */ }
+    const li = document.createElement("li");
+    li.textContent = name;
+    if (!ok) li.className = "no";
+    $("features").append(li);
+  }
+
+  let frames = 0, start = performance.now();
+  const count = (now) => {
+    frames++;
+    if (now - start >= 2000) {
+      const fps = Math.round(frames * 1000 / (now - start));
+      $("fps").textContent = fps + " fps";
+      $("fps").className = fps >= 40 ? "ok" : "bad";
+      frames = 0; start = now;
+    }
+    requestAnimationFrame(count);
+  };
+  requestAnimationFrame(count);
+</script>
+</body>
+</html>

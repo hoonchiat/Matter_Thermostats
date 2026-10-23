@@ -1,9 +1,8 @@
 name: LiteBrowser
 
 # Checks for the lightweight-browser/ Rust project, a Linux (WebKitGTK)
-# touch-screen browser: format, lint and unit tests on x86-64, plus a
-# release build on arm64 (Raspberry Pi class boards) for public repos, where
-# GitHub's arm64 runners are available.
+# touch-screen browser: format, lint and unit tests, plus downloadable
+# x86-64 and arm64 (Raspberry Pi class boards) binaries.
 
 on:
   push:
@@ -37,12 +36,22 @@ jobs:
       - run: cargo fmt --check
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test
-      - run: cargo build --release
 
-  arm64:
-    name: Build + test (arm64)
-    if: ${{ !github.event.repository.private }}
-    runs-on: ubuntu-24.04-arm
+  # Downloadable binaries (Actions run page -> Artifacts). Built on Ubuntu
+  # 22.04 so they also run on older distros (glibc >= 2.35), e.g. Raspberry
+  # Pi OS Bookworm and Debian 12. The device only needs libwebkit2gtk-4.1-0.
+  binaries:
+    name: Binary (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-22.04
+          # Free for public repositories; a private repo needs a paid plan.
+          - arch: arm64
+            runner: ubuntu-22.04-arm
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
       - name: Install WebKitGTK
@@ -53,3 +62,13 @@ jobs:
           workspaces: lightweight-browser
       - run: cargo test
       - run: cargo build --release
+      - name: Package
+        run: |
+          mkdir -p dist/litebrowser
+          cp target/release/litebrowser README.md TESTING.md dist/litebrowser/
+          cp -r examples tools dist/litebrowser/
+          tar -C dist -czf litebrowser-linux-${{ matrix.arch }}.tar.gz litebrowser
+      - uses: actions/upload-artifact@v4
+        with:
+          name: litebrowser-linux-${{ matrix.arch }}
+          path: lightweight-browser/litebrowser-linux-${{ matrix.arch }}.tar.gz
